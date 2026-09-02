@@ -1,0 +1,6 @@
+{
+  "name": "PrintFlow",
+  "description": "Full-stack print-on-demand platform with RESTful API, JWT authentication, interactive design studio, real-time Socket.io notifications, and unit test suite.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
