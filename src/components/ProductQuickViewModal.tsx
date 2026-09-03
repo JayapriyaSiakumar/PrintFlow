@@ -6,18 +6,28 @@ import { X, Check, ShoppingBag, Palette, Star, Truck, ShieldCheck, RefreshCw } f
 export const ProductQuickViewModal: React.FC = () => {
   const { quickViewProduct, setQuickViewProduct, addToCart, setDesigningProduct, setActiveView } = useApp();
 
+  const [selectedSize, setSelectedSize] = useState<Size>('M');
+  const [selectedColor, setSelectedColor] = useState<ProductColor | null>(null);
+  const [quantity, setQuantity] = useState<number>(1);
+
+  React.useEffect(() => {
+    if (quickViewProduct) {
+      setSelectedSize(quickViewProduct.sizes[0] || 'M');
+      setSelectedColor(quickViewProduct.colors[0] || null);
+      setQuantity(1);
+    }
+  }, [quickViewProduct]);
+
   if (!quickViewProduct) return null;
 
-  const [selectedSize, setSelectedSize] = useState<Size>(quickViewProduct.sizes[0] || 'M');
-  const [selectedColor, setSelectedColor] = useState<ProductColor>(quickViewProduct.colors[0]);
-  const [quantity, setQuantity] = useState<number>(1);
+  const currentColor = selectedColor || quickViewProduct.colors[0];
 
   const handleAddToCart = () => {
     addToCart({
       productId: quickViewProduct.id,
       product: quickViewProduct,
       size: selectedSize,
-      color: selectedColor,
+      color: currentColor,
       quantity,
       unitPrice: quickViewProduct.price,
     });
@@ -90,7 +100,7 @@ export const ProductQuickViewModal: React.FC = () => {
           {/* Color Selection */}
           <div className="mb-4">
             <label className="text-xs font-bold text-[#1a1c1c] uppercase tracking-wider block mb-2">
-              Color: <span className="font-normal text-[#555f6f]">{selectedColor.name}</span>
+              Color: <span className="font-normal text-[#555f6f]">{currentColor.name}</span>
             </label>
             <div className="flex flex-wrap gap-2.5">
               {quickViewProduct.colors.map((c) => (
@@ -99,7 +109,7 @@ export const ProductQuickViewModal: React.FC = () => {
                   onClick={() => setSelectedColor(c)}
                   style={{ backgroundColor: c.hex }}
                   className={`w-7 h-7 rounded-full border border-black/10 transition-all ${
-                    selectedColor.hex === c.hex
+                    currentColor.hex === c.hex
                       ? 'ring-2 ring-[#0058be] ring-offset-2 ring-offset-white scale-110'
                       : 'hover:scale-105'
                   }`}

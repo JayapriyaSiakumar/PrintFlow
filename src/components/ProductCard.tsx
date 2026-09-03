@@ -63,12 +63,16 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
             e.stopPropagation();
             toggleFavorite(product.id);
           }}
-          className="absolute top-3 right-3 bg-white/90 backdrop-blur-md rounded-md p-1.5 shadow-sm hover:scale-110 active:scale-90 transition-transform cursor-pointer"
-          title={favorited ? 'Remove from favorites' : 'Add to favorites'}
+          className={`absolute top-3 right-3 rounded-full p-2 shadow-sm transition-all duration-200 cursor-pointer ${
+            favorited 
+              ? 'bg-rose-50/95 text-rose-500 scale-105 shadow-rose-200' 
+              : 'bg-white/90 backdrop-blur-md text-[#555f6f] hover:text-rose-500 hover:scale-110'
+          }`}
+          title={favorited ? 'Remove from Wishlist' : 'Save to Wishlist'}
         >
           <Heart
-            className={`w-4 h-4 transition-colors ${
-              favorited ? 'fill-[#0058be] text-[#0058be]' : 'text-[#1a1c1c] hover:text-[#0058be]'
+            className={`w-4 h-4 transition-all duration-200 ${
+              favorited ? 'fill-rose-500 text-rose-500 scale-110' : 'text-current'
             }`}
           />
         </button>

@@ -30,6 +30,13 @@ export const CartDrawer: React.FC = () => {
   const [state, setState] = useState('OR');
   const [zip, setZip] = useState('97201');
 
+  React.useEffect(() => {
+    if (user) {
+      if (user.name) setName(user.name);
+      if (user.email) setEmail(user.email);
+    }
+  }, [user, isCartOpen]);
+
   if (!isCartOpen) return null;
 
   const shippingFee = cartSubtotal >= 75 || (couponApplied && couponCode.toUpperCase() === 'SPRINGPRINT') ? 0 : 5.99;

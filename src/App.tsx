@@ -12,6 +12,7 @@ import { ProductQuickViewModal } from './components/ProductQuickViewModal';
 import { DesignStudioModal } from './components/DesignStudioModal';
 import { AuthModal } from './components/AuthModal';
 import { CartDrawer } from './components/CartDrawer';
+import { WishlistDrawer } from './components/WishlistDrawer';
 import { OrderSuccessModal } from './components/OrderSuccessModal';
 import { UserDashboardModal } from './components/UserDashboardModal';
 import { AdminLiveSimulator } from './components/AdminLiveSimulator';
@@ -52,6 +53,7 @@ const MainLayout: React.FC = () => {
       <ProductQuickViewModal />
       <AuthModal />
       <CartDrawer />
+      <WishlistDrawer />
       <OrderSuccessModal />
       <UserDashboardModal />
       <AdminLiveSimulator />

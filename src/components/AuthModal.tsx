@@ -12,8 +12,6 @@ export const AuthModal: React.FC = () => {
     register,
   } = useApp();
 
-  if (!isAuthModalOpen) return null;
-
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -21,6 +19,16 @@ export const AuthModal: React.FC = () => {
   const [role, setRole] = useState<'creator' | 'customer' | 'admin'>('creator');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  // Clear errors and inputs when modal opens or mode changes
+  React.useEffect(() => {
+    if (isAuthModalOpen) {
+      setErrorMessage('');
+      setLoading(false);
+    }
+  }, [isAuthModalOpen, authModalMode]);
+
+  if (!isAuthModalOpen) return null;
 
   const isLogin = authModalMode === 'login';
 

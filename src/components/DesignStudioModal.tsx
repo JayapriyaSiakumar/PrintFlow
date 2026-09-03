@@ -48,6 +48,14 @@ export const DesignStudioModal: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  React.useEffect(() => {
+    if (designingProduct) {
+      setSelectedProduct(designingProduct);
+      setSelectedColor(designingProduct.colors[0] || AVAILABLE_COLORS[0]);
+      setSelectedSize(designingProduct.sizes[1] || designingProduct.sizes[0] || 'M');
+    }
+  }, [designingProduct]);
+
   // Price calculations with volume discounts
   const basePrice = selectedProduct.price;
   const printCost = 6.0;

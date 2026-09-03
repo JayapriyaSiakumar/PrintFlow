@@ -1,6 +1,31 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { ShoppingBag, Bell, Activity, Sparkles, User as UserIcon, Shield, CheckCircle2, ChevronRight, LogOut, Heart, Palette, Play } from 'lucide-react';
+import { Category } from '../types';
+import { 
+  ShoppingBag, 
+  Bell, 
+  User as UserIcon, 
+  Heart, 
+  Palette, 
+  Search, 
+  SlidersHorizontal, 
+  X, 
+  Menu, 
+  LogOut, 
+  ChevronDown, 
+  Sparkles,
+  PackageCheck,
+  Layers,
+  ArrowRight
+} from 'lucide-react';
+
+const CATEGORIES: { label: string; value: Category | 'All' }[] = [
+  { label: 'All Categories', value: 'All' },
+  { label: 'Apparel', value: 'Apparel' },
+  { label: 'Home Decor', value: 'Home Decor' },
+  { label: 'Accessories', value: 'Accessories' },
+  { label: 'Stationery', value: 'Stationery' },
+];
 
 export const Header: React.FC = () => {
   const {
@@ -8,6 +33,8 @@ export const Header: React.FC = () => {
     setActiveView,
     cartCount,
     setIsCartOpen,
+    wishlistCount,
+    setIsWishlistOpen,
     user,
     openAuthModal,
     logout,
@@ -18,42 +45,169 @@ export const Header: React.FC = () => {
     isNotificationDropdownOpen,
     setIsNotificationDropdownOpen,
     markNotificationsRead,
-    socketConnected,
-    setIsAdminSimulatorOpen,
+    filters,
+    setSearchQuery,
+    setCategory,
   } = useApp();
 
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
+  const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+
+  const categoryDropdownRef = useRef<HTMLDivElement>(null);
+  const userDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(event.target as Node)) {
+        setCategoryDropdownOpen(false);
+      }
+      if (userDropdownRef.current && !userDropdownRef.current.contains(event.target as Node)) {
+        setUserDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(e.target.value);
+    if (activeView !== 'products') {
+      setActiveView('products');
+    }
+  };
+
+  const handleCategorySelect = (catValue: Category | 'All') => {
+    if (catValue === 'All') {
+      setCategory('Apparel'); // or default
+    } else {
+      setCategory(catValue);
+    }
+    setCategoryDropdownOpen(false);
+    if (activeView !== 'products') {
+      setActiveView('products');
+    }
+  };
+
   return (
-    <header className="fixed top-0 w-full z-40 bg-[#f9f9f9]/90 backdrop-blur-xl border-b border-[#e2e2e2]/60 shadow-[0_1px_8px_rgba(0,0,0,0.03)]">
-      <div className="h-20 max-w-[1280px] mx-auto px-4 sm:px-8 lg:px-16 flex items-center justify-between">
+    <header className="fixed top-0 w-full z-40 bg-[#f9f9f9]/95 backdrop-blur-xl border-b border-[#e2e2e2]/70 shadow-[0_1px_8px_rgba(0,0,0,0.03)]">
+      <div className="h-20 max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-12 flex items-center justify-between gap-4">
         
-        {/* Logo */}
+        {/* Left: Brand Logo */}
         <div 
-          onClick={() => setActiveView('products')}
-          className="flex items-center gap-2.5 cursor-pointer group select-none"
+          onClick={() => {
+            setActiveView('products');
+            setMobileMenuOpen(false);
+          }}
+          className="flex items-center gap-2.5 cursor-pointer group select-none flex-shrink-0"
         >
           <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#0058be] to-[#2170e4] flex items-center justify-center text-white shadow-sm shadow-[#0058be]/20 group-hover:scale-105 transition-transform">
             <span className="font-['Montserrat'] font-bold text-lg tracking-wider">PF</span>
           </div>
-          <span className="font-['Montserrat'] font-semibold text-2xl tracking-tight text-[#0058be]">
-            PrintFlow
-          </span>
+          <div className="flex flex-col">
+            <span className="font-['Montserrat'] font-bold text-2xl tracking-tight text-[#0058be] leading-none">
+              PrintFlow
+            </span>
+            <span className="text-[10px] font-medium text-[#727785] tracking-wide mt-0.5 hidden sm:inline">
+              Custom Merch Platform
+            </span>
+          </div>
         </div>
 
-        {/* Navigation Links */}
-        <nav className="hidden lg:flex items-center gap-10">
+        {/* Center: Search & Filter Bar (Desktop & Tablet) */}
+        <div className="hidden md:flex flex-1 max-w-lg items-center relative">
+          <div className="w-full flex items-center bg-[#eeeeee]/90 hover:bg-[#e8e8e8] focus-within:bg-white focus-within:ring-2 focus-within:ring-[#0058be]/30 focus-within:border-[#0058be] border border-transparent rounded-full px-3.5 py-1.5 transition-all">
+            
+            {/* Quick Category Filter Selector */}
+            <div className="relative flex-shrink-0" ref={categoryDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setCategoryDropdownOpen(!categoryDropdownOpen)}
+                className="flex items-center gap-1.5 text-xs font-semibold text-[#1a1c1c] pr-2.5 mr-2 border-r border-[#d0d3d8] hover:text-[#0058be] transition-colors cursor-pointer"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5 text-[#0058be]" />
+                <span className="max-w-[85px] truncate">{filters.category || 'All'}</span>
+                <ChevronDown className="w-3 h-3 text-[#727785]" />
+              </button>
+
+              {categoryDropdownOpen && (
+                <div className="absolute left-0 top-full mt-2 w-44 bg-white rounded-xl shadow-xl border border-[#e2e2e2] py-1.5 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+                  <div className="px-3 py-1.5 text-[10px] font-bold text-[#727785] uppercase tracking-wider border-b border-[#f0f0f2]">
+                    Filter by Category
+                  </div>
+                  {CATEGORIES.map((cat) => (
+                    <button
+                      key={cat.label}
+                      onClick={() => handleCategorySelect(cat.value)}
+                      className={`w-full text-left px-3.5 py-2 text-xs transition-colors flex items-center justify-between ${
+                        filters.category === cat.value
+                          ? 'bg-[#d8e2ff]/50 text-[#0058be] font-bold'
+                          : 'text-[#424754] hover:bg-[#f9f9f9]'
+                      }`}
+                    >
+                      {cat.label}
+                      {filters.category === cat.value && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#0058be]"></span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Search Input */}
+            <Search className="w-4 h-4 text-[#727785] mr-2 flex-shrink-0" />
+            <input
+              type="text"
+              value={filters.searchQuery}
+              onChange={handleSearchChange}
+              placeholder="Search products, tees, hoodies, mugs..."
+              className="w-full bg-transparent text-xs text-[#1a1c1c] placeholder:text-[#727785] focus:outline-none"
+            />
+
+            {filters.searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="p-1 hover:bg-[#d8d8d8] rounded-full text-[#727785] hover:text-[#1a1c1c] transition-colors ml-1"
+                title="Clear search"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Center-Right: Navigation Links */}
+        <nav className="hidden xl:flex items-center gap-7">
           <button
             onClick={() => setActiveView('products')}
-            className={`transition-colors text-base font-medium py-1 ${
+            className={`transition-colors text-sm font-medium py-1 ${
               activeView === 'products'
                 ? 'text-[#0058be] font-semibold underline underline-offset-8 decoration-2'
                 : 'text-[#424754] hover:text-[#0058be]'
             }`}
           >
-            Products
+            Catalog
           </button>
+          
+          <button
+            onClick={() => setActiveView('design-tool')}
+            className={`transition-colors text-sm font-medium py-1 flex items-center gap-1.5 ${
+              activeView === 'design-tool'
+                ? 'text-[#0058be] font-semibold underline underline-offset-8 decoration-2'
+                : 'text-[#424754] hover:text-[#0058be]'
+            }`}
+          >
+            <Palette className="w-4 h-4 text-[#6b38d4]" />
+            <span>Design Studio</span>
+          </button>
+
           <button
             onClick={() => setActiveView('how-it-works')}
-            className={`transition-colors text-base font-medium py-1 ${
+            className={`transition-colors text-sm font-medium py-1 ${
               activeView === 'how-it-works'
                 ? 'text-[#0058be] font-semibold underline underline-offset-8 decoration-2'
                 : 'text-[#424754] hover:text-[#0058be]'
@@ -61,70 +215,42 @@ export const Header: React.FC = () => {
           >
             How it Works
           </button>
-          <button
-            onClick={() => setActiveView('pricing')}
-            className={`transition-colors text-base font-medium py-1 ${
-              activeView === 'pricing'
-                ? 'text-[#0058be] font-semibold underline underline-offset-8 decoration-2'
-                : 'text-[#424754] hover:text-[#0058be]'
-            }`}
-          >
-            Pricing
-          </button>
-          <button
-            onClick={() => setActiveView('design-tool')}
-            className={`transition-colors text-base font-medium py-1 flex items-center gap-1.5 ${
-              activeView === 'design-tool'
-                ? 'text-[#0058be] font-semibold underline underline-offset-8 decoration-2'
-                : 'text-[#424754] hover:text-[#0058be]'
-            }`}
-          >
-            <Palette className="w-4 h-4 text-[#6b38d4]" />
-            <span>Design Tool</span>
-          </button>
-          <button
-            onClick={() => setActiveView('unit-tests')}
-            className={`transition-colors text-xs font-semibold px-2.5 py-1 rounded-full border flex items-center gap-1.5 ${
-              activeView === 'unit-tests'
-                ? 'bg-[#0058be] text-white border-[#0058be]'
-                : 'bg-white text-[#555f6f] border-[#c2c6d6] hover:border-[#0058be] hover:text-[#0058be]'
-            }`}
-          >
-            <Play className="w-3 h-3 text-emerald-500 fill-emerald-500" />
-            <span>Unit Tests</span>
-          </button>
         </nav>
 
-        {/* Action Controls */}
-        <div className="flex items-center gap-3 sm:gap-4">
+        {/* Right: Actions (Wishlist, Notifications, Cart, Profile, Mobile Menu) */}
+        <div className="flex items-center gap-1.5 sm:gap-3">
           
-          {/* Socket.io Live Sync Beacon */}
-          <div 
-            onClick={() => setIsAdminSimulatorOpen(true)}
-            title="Real-time Socket.io Sync Active - Click to open Live Simulator"
-            className="cursor-pointer hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-medium hover:bg-emerald-100 transition-colors"
-          >
-            <span className="relative flex h-2 w-2">
-              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${socketConnected ? 'bg-emerald-400' : 'bg-amber-400'} opacity-75`}></span>
-              <span className={`relative inline-flex rounded-full h-2 w-2 ${socketConnected ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
-            </span>
-            <span className="font-mono text-[11px]">{socketConnected ? 'Live Socket.io' : 'Connecting...'}</span>
-          </div>
-
-          {/* Admin Live Trigger Drawer Button */}
+          {/* Mobile Search Toggle Button */}
           <button
-            onClick={() => setIsAdminSimulatorOpen(true)}
-            title="Live Broadcast & Order Simulator"
-            className="p-2 rounded-lg text-[#555f6f] hover:text-[#0058be] hover:bg-[#eeeeee] transition-colors"
+            onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
+            className="md:hidden p-2 rounded-lg text-[#555f6f] hover:text-[#0058be] hover:bg-[#eeeeee] transition-colors"
+            title="Search products"
           >
-            <Activity className="w-5 h-5" />
+            <Search className="w-5 h-5" />
+          </button>
+
+          {/* Wishlist Button with Heart Icon & Counter Badge */}
+          <button
+            onClick={() => setIsWishlistOpen(true)}
+            className="relative p-2 rounded-lg text-[#555f6f] hover:text-rose-600 hover:bg-[#eeeeee] transition-colors cursor-pointer group"
+            title={`View Saved Wishlist (${wishlistCount} items)`}
+          >
+            <Heart className={`w-5 h-5 transition-transform group-hover:scale-110 ${
+              wishlistCount > 0 ? 'fill-rose-500 text-rose-500' : ''
+            }`} />
+            {wishlistCount > 0 && (
+              <span className="absolute top-1 right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center shadow-sm">
+                {wishlistCount}
+              </span>
+            )}
           </button>
 
           {/* Notifications Dropdown */}
           <div className="relative">
             <button
               onClick={() => setIsNotificationDropdownOpen(!isNotificationDropdownOpen)}
-              className="relative p-2 rounded-lg text-[#555f6f] hover:text-[#0058be] hover:bg-[#eeeeee] transition-colors"
+              className="relative p-2 rounded-lg text-[#555f6f] hover:text-[#0058be] hover:bg-[#eeeeee] transition-colors cursor-pointer"
+              title="Notifications"
             >
               <Bell className="w-5 h-5" />
               {unreadCount > 0 && (
@@ -144,7 +270,7 @@ export const Header: React.FC = () => {
                   {unreadCount > 0 && (
                     <button
                       onClick={() => markNotificationsRead()}
-                      className="text-xs text-[#0058be] hover:underline font-medium"
+                      className="text-xs text-[#0058be] hover:underline font-medium cursor-pointer"
                     >
                       Mark all read
                     </button>
@@ -189,11 +315,12 @@ export const Header: React.FC = () => {
           {/* Cart Icon */}
           <button
             onClick={() => setIsCartOpen(true)}
-            className="relative p-2 rounded-lg text-[#555f6f] hover:text-[#0058be] hover:bg-[#eeeeee] transition-colors"
+            className="relative p-2 rounded-lg text-[#555f6f] hover:text-[#0058be] hover:bg-[#eeeeee] transition-colors cursor-pointer"
+            title="Shopping Cart"
           >
             <ShoppingBag className="w-5 h-5" />
             {cartCount > 0 && (
-              <span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-[#0058be] text-white text-[10px] font-bold flex items-center justify-center">
+              <span className="absolute top-1 right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[#0058be] text-white text-[10px] font-bold flex items-center justify-center shadow-sm">
                 {cartCount}
               </span>
             )}
@@ -201,84 +328,242 @@ export const Header: React.FC = () => {
 
           {/* Auth Button or User Profile */}
           {user ? (
-            <div className="relative group">
+            <div className="relative" ref={userDropdownRef}>
               <button 
-                onClick={() => {
-                  setDashboardTab('orders');
-                  setIsDashboardOpen(true);
-                }}
-                className="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-full bg-[#eeeeee] hover:bg-[#e2e2e2] transition-colors"
+                onClick={() => setUserDropdownOpen(!userDropdownOpen)}
+                className="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-full bg-[#eeeeee] hover:bg-[#e2e2e2] transition-colors cursor-pointer"
               >
                 <img
                   src={user.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80'}
                   alt={user.name}
                   className="w-7 h-7 rounded-full object-cover ring-1 ring-white"
                 />
-                <span className="font-medium text-xs text-[#1a1c1c] max-w-[90px] truncate hidden sm:inline">
+                <span className="font-medium text-xs text-[#1a1c1c] max-w-[90px] truncate hidden lg:inline">
                   {user.name}
                 </span>
                 {user.role === 'admin' && (
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-[#6b38d4] text-white uppercase">
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-[#6b38d4] text-white uppercase hidden sm:inline">
                     Admin
                   </span>
                 )}
+                <ChevronDown className="w-3 h-3 text-[#727785]" />
               </button>
 
-              <div className="absolute right-0 top-full mt-2 w-52 bg-white rounded-xl shadow-xl border border-[#e2e2e2] py-1.5 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
-                <div className="px-3.5 py-2 border-b border-[#f3f3f4]">
-                  <p className="text-xs font-bold text-[#1a1c1c] truncate">{user.name}</p>
-                  <p className="text-[11px] text-[#727785] truncate">{user.email}</p>
-                  <span className="inline-block mt-1 text-[10px] font-semibold text-[#0058be] bg-[#d8e2ff] px-2 py-0.5 rounded capitalize">
-                    {user.role} Account
-                  </span>
+              {userDropdownOpen && (
+                <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-xl border border-[#e2e2e2] py-1.5 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+                  <div className="px-3.5 py-2.5 border-b border-[#f3f3f4]">
+                    <p className="text-xs font-bold text-[#1a1c1c] truncate">{user.name}</p>
+                    <p className="text-[11px] text-[#727785] truncate">{user.email}</p>
+                    <span className="inline-block mt-1 text-[10px] font-semibold text-[#0058be] bg-[#d8e2ff] px-2 py-0.5 rounded capitalize">
+                      {user.role} Account
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setUserDropdownOpen(false);
+                      setDashboardTab('orders');
+                      setIsDashboardOpen(true);
+                    }}
+                    className="w-full text-left px-3.5 py-2 text-xs text-[#424754] hover:bg-[#f9f9f9] flex items-center gap-2 cursor-pointer"
+                  >
+                    <PackageCheck className="w-3.5 h-3.5 text-[#0058be]" /> Order History
+                  </button>
+                  <button
+                    onClick={() => {
+                      setUserDropdownOpen(false);
+                      setDashboardTab('designs');
+                      setIsDashboardOpen(true);
+                    }}
+                    className="w-full text-left px-3.5 py-2 text-xs text-[#424754] hover:bg-[#f9f9f9] flex items-center gap-2 cursor-pointer"
+                  >
+                    <Palette className="w-3.5 h-3.5 text-[#6b38d4]" /> Saved Designs
+                  </button>
+                  <button
+                    onClick={() => {
+                      setUserDropdownOpen(false);
+                      setIsWishlistOpen(true);
+                    }}
+                    className="w-full text-left px-3.5 py-2 text-xs text-[#424754] hover:bg-[#f9f9f9] flex items-center gap-2 cursor-pointer"
+                  >
+                    <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500" /> Wishlist ({wishlistCount})
+                  </button>
+                  <div className="border-t border-[#f3f3f4] my-1"></div>
+                  <button
+                    onClick={() => {
+                      setUserDropdownOpen(false);
+                      logout();
+                    }}
+                    className="w-full text-left px-3.5 py-2 text-xs text-[#ba1a1a] hover:bg-red-50 flex items-center gap-2 font-medium cursor-pointer"
+                  >
+                    <LogOut className="w-3.5 h-3.5" /> Sign Out
+                  </button>
                 </div>
-                <button
-                  onClick={() => {
-                    setDashboardTab('orders');
-                    setIsDashboardOpen(true);
-                  }}
-                  className="w-full text-left px-3.5 py-2 text-xs text-[#424754] hover:bg-[#f9f9f9] flex items-center gap-2"
-                >
-                  <ShoppingBag className="w-3.5 h-3.5" /> Order History
-                </button>
-                <button
-                  onClick={() => {
-                    setDashboardTab('designs');
-                    setIsDashboardOpen(true);
-                  }}
-                  className="w-full text-left px-3.5 py-2 text-xs text-[#424754] hover:bg-[#f9f9f9] flex items-center gap-2"
-                >
-                  <Palette className="w-3.5 h-3.5" /> Saved Designs
-                </button>
-                <button
-                  onClick={() => {
-                    setDashboardTab('wishlist');
-                    setIsDashboardOpen(true);
-                  }}
-                  className="w-full text-left px-3.5 py-2 text-xs text-[#424754] hover:bg-[#f9f9f9] flex items-center gap-2"
-                >
-                  <Heart className="w-3.5 h-3.5" /> Wishlist
-                </button>
-                <div className="border-t border-[#f3f3f4] my-1"></div>
-                <button
-                  onClick={logout}
-                  className="w-full text-left px-3.5 py-2 text-xs text-[#ba1a1a] hover:bg-red-50 flex items-center gap-2 font-medium"
-                >
-                  <LogOut className="w-3.5 h-3.5" /> Sign Out
-                </button>
-              </div>
+              )}
             </div>
           ) : (
             <button
               onClick={() => openAuthModal('register')}
-              className="px-5 py-2 font-semibold text-sm bg-[#0058be] text-white rounded-lg hover:bg-[#2170e4] active:scale-95 shadow-sm shadow-[#0058be]/20 transition-all cursor-pointer whitespace-nowrap"
+              className="px-4 sm:px-5 py-2 font-semibold text-xs sm:text-sm bg-[#0058be] text-white rounded-lg hover:bg-[#2170e4] active:scale-95 shadow-sm shadow-[#0058be]/20 transition-all cursor-pointer whitespace-nowrap"
             >
-              Get Started
+              Sign In
             </button>
           )}
 
+          {/* Mobile Hamburger Menu Toggle */}
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="xl:hidden p-2 rounded-lg text-[#555f6f] hover:text-[#0058be] hover:bg-[#eeeeee] transition-colors"
+            title="Toggle navigation menu"
+          >
+            {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6 text-[#1a1c1c]" />}
+          </button>
+
         </div>
       </div>
+
+      {/* Mobile Search Expandable Bar */}
+      {mobileSearchOpen && (
+        <div className="md:hidden px-4 pb-3 bg-[#f9f9f9] border-b border-[#e2e2e2] animate-in slide-in-from-top duration-150">
+          <div className="flex items-center bg-white border border-[#c2c6d6] rounded-lg px-3 py-2 shadow-inner">
+            <Search className="w-4 h-4 text-[#727785] mr-2" />
+            <input
+              type="text"
+              value={filters.searchQuery}
+              onChange={handleSearchChange}
+              placeholder="Search all apparel, merch..."
+              className="w-full bg-transparent text-xs text-[#1a1c1c] focus:outline-none"
+              autoFocus
+            />
+            {filters.searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="p-1 text-[#727785] hover:text-[#1a1c1c]"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Mobile Category Chips */}
+          <div className="flex items-center gap-2 overflow-x-auto pt-2 pb-1 no-scrollbar">
+            {CATEGORIES.map((cat) => (
+              <button
+                key={cat.label}
+                onClick={() => handleCategorySelect(cat.value)}
+                className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+                  filters.category === cat.value
+                    ? 'bg-[#0058be] text-white'
+                    : 'bg-[#eeeeee] text-[#424754] hover:bg-[#e2e2e2]'
+                }`}
+              >
+                {cat.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Drawer Menu */}
+      {mobileMenuOpen && (
+        <div className="xl:hidden bg-white border-b border-[#e2e2e2] shadow-xl animate-in slide-in-from-top duration-200">
+          <div className="px-5 py-4 space-y-3">
+            
+            <div className="text-[11px] font-bold text-[#727785] uppercase tracking-wider">
+              Navigation
+            </div>
+
+            <button
+              onClick={() => {
+                setActiveView('products');
+                setMobileMenuOpen(false);
+              }}
+              className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium flex items-center justify-between ${
+                activeView === 'products' ? 'bg-[#d8e2ff] text-[#0058be] font-bold' : 'text-[#1a1c1c] hover:bg-[#f9f9f9]'
+              }`}
+            >
+              <span>Catalog Products</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+
+            <button
+              onClick={() => {
+                setActiveView('design-tool');
+                setMobileMenuOpen(false);
+              }}
+              className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium flex items-center justify-between ${
+                activeView === 'design-tool' ? 'bg-[#d8e2ff] text-[#0058be] font-bold' : 'text-[#1a1c1c] hover:bg-[#f9f9f9]'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Palette className="w-4 h-4 text-[#6b38d4]" />
+                <span>Custom Design Studio</span>
+              </div>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+
+            <button
+              onClick={() => {
+                setActiveView('how-it-works');
+                setMobileMenuOpen(false);
+              }}
+              className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium flex items-center justify-between ${
+                activeView === 'how-it-works' ? 'bg-[#d8e2ff] text-[#0058be] font-bold' : 'text-[#1a1c1c] hover:bg-[#f9f9f9]'
+              }`}
+            >
+              <span>How PrintFlow Works</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+
+            <div className="border-t border-[#f0f0f2] pt-3">
+              <div className="text-[11px] font-bold text-[#727785] uppercase tracking-wider mb-2">
+                Quick Category Filters
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {CATEGORIES.filter(c => c.value !== 'All').map((cat) => (
+                  <button
+                    key={cat.label}
+                    onClick={() => {
+                      handleCategorySelect(cat.value);
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`px-3 py-2 rounded-lg text-xs text-left font-medium border ${
+                      filters.category === cat.value
+                        ? 'border-[#0058be] bg-[#d8e2ff]/50 text-[#0058be]'
+                        : 'border-[#e2e2e2] bg-[#f9f9f9] text-[#424754]'
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="border-t border-[#f0f0f2] pt-3 flex gap-2">
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  setIsWishlistOpen(true);
+                }}
+                className="flex-1 py-2.5 px-3 bg-rose-50 text-rose-700 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5"
+              >
+                <Heart className="w-4 h-4 fill-rose-500 text-rose-500" />
+                Wishlist ({wishlistCount})
+              </button>
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  setIsCartOpen(true);
+                }}
+                className="flex-1 py-2.5 px-3 bg-[#0058be] text-white text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5"
+              >
+                <ShoppingBag className="w-4 h-4" />
+                Cart ({cartCount})
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
     </header>
   );
 };

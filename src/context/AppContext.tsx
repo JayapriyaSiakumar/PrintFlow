@@ -34,6 +34,9 @@ interface AppContextType {
 
   // Favorites / Wishlist
   favorites: string[];
+  wishlistCount: number;
+  isWishlistOpen: boolean;
+  setIsWishlistOpen: (open: boolean) => void;
   toggleFavorite: (productId: string) => void;
   isFavorite: (productId: string) => boolean;
 
@@ -137,6 +140,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
   const [designingProduct, setDesigningProduct] = useState<Product | null>(null);
   const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
+  const [isWishlistOpen, setIsWishlistOpen] = useState<boolean>(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
   const [isDashboardOpen, setIsDashboardOpen] = useState<boolean>(false);
@@ -552,6 +556,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         resetFilters,
         refreshProducts,
         favorites,
+        wishlistCount: favorites.length,
+        isWishlistOpen,
+        setIsWishlistOpen,
         toggleFavorite,
         isFavorite,
         quickViewProduct,

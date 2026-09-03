@@ -1,16 +1,16 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import { Sparkles, Shield, Cpu, RefreshCw } from 'lucide-react';
+import { Sparkles, Shield, Truck, Heart } from 'lucide-react';
 
 export const Footer: React.FC = () => {
-  const { setActiveView, setCategory } = useApp();
+  const { setActiveView, setCategory, setIsWishlistOpen } = useApp();
 
   return (
     <footer className="w-full bg-[#eeeeee] border-t border-[#e2e2e2] mt-20 select-none">
       <div className="max-w-[1280px] mx-auto px-4 sm:px-8 lg:px-16 py-12">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-8 pb-12 border-b border-[#dadada]">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 pb-12 border-b border-[#dadada]">
           
-          {/* Col 1: Brand */}
+          {/* Col 1: Brand & Updated Description */}
           <div className="lg:col-span-2 space-y-3">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-lg bg-[#0058be] text-white flex items-center justify-center font-['Montserrat'] font-bold text-base shadow-sm">
@@ -20,12 +20,16 @@ export const Footer: React.FC = () => {
                 PrintFlow
               </span>
             </div>
-            <p className="font-['Inter'] text-xs text-[#555f6f] leading-relaxed max-w-sm">
-              The modern on-demand apparel and merchandise platform built on the MERN stack with RESTful APIs, JWT role authentication, and real-time Socket.io updates.
+            <p className="font-['Inter'] text-xs text-[#555f6f] leading-relaxed max-w-md">
+              Create, customize, and deliver premium on-demand apparel and custom merchandise. Premium printing, zero minimum orders, and fast automated fulfillment worldwide.
             </p>
-            <div className="flex items-center gap-2 pt-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span className="text-[11px] font-mono text-[#555f6f]">Fulfillment Nodes: US-West, US-East, EU-Central</span>
+            <div className="flex flex-wrap items-center gap-4 pt-2 text-[11px] text-[#555f6f]">
+              <span className="flex items-center gap-1.5">
+                <Truck className="w-3.5 h-3.5 text-[#0058be]" /> Fast Global Delivery
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Shield className="w-3.5 h-3.5 text-emerald-600" /> 100% Quality Guaranteed
+              </span>
             </div>
           </div>
 
@@ -39,7 +43,7 @@ export const Footer: React.FC = () => {
                     setCategory('Apparel');
                     setActiveView('products');
                   }}
-                  className="hover:text-[#0058be] transition-colors"
+                  className="hover:text-[#0058be] transition-colors cursor-pointer"
                 >
                   Apparel Blanks
                 </button>
@@ -50,7 +54,7 @@ export const Footer: React.FC = () => {
                     setCategory('Home Decor');
                     setActiveView('products');
                   }}
-                  className="hover:text-[#0058be] transition-colors"
+                  className="hover:text-[#0058be] transition-colors cursor-pointer"
                 >
                   Home Decor
                 </button>
@@ -61,7 +65,7 @@ export const Footer: React.FC = () => {
                     setCategory('Accessories');
                     setActiveView('products');
                   }}
-                  className="hover:text-[#0058be] transition-colors"
+                  className="hover:text-[#0058be] transition-colors cursor-pointer"
                 >
                   Bags & Accessories
                 </button>
@@ -72,7 +76,7 @@ export const Footer: React.FC = () => {
                     setCategory('Stationery');
                     setActiveView('products');
                   }}
-                  className="hover:text-[#0058be] transition-colors"
+                  className="hover:text-[#0058be] transition-colors cursor-pointer"
                 >
                   Stationery & Prints
                 </button>
@@ -80,40 +84,40 @@ export const Footer: React.FC = () => {
             </ul>
           </div>
 
-          {/* Col 3: Technology */}
+          {/* Col 3: Quick Links & Services */}
           <div className="space-y-3">
-            <h4 className="font-['Montserrat'] font-bold text-sm text-[#1a1c1c]">MERN Stack</h4>
-            <ul className="space-y-2 text-xs text-[#555f6f]">
-              <li>Express & Node REST API</li>
-              <li>JWT Authentication Bearer</li>
-              <li>Socket.io Real-Time Stream</li>
-              <li>Tailwind CSS Design Tokens</li>
-              <li>Kornit DTG Print Technology</li>
-            </ul>
-          </div>
-
-          {/* Col 4: Platform & Support */}
-          <div className="space-y-3">
-            <h4 className="font-['Montserrat'] font-bold text-sm text-[#1a1c1c]">Resources</h4>
+            <h4 className="font-['Montserrat'] font-bold text-sm text-[#1a1c1c]">Quick Links</h4>
             <ul className="space-y-2 text-xs text-[#555f6f]">
               <li>
-                <button onClick={() => setActiveView('how-it-works')} className="hover:text-[#0058be]">
-                  How it Works
+                <button 
+                  onClick={() => setActiveView('products')} 
+                  className="hover:text-[#0058be] transition-colors cursor-pointer"
+                >
+                  Browse Catalog
                 </button>
               </li>
               <li>
-                <button onClick={() => setActiveView('pricing')} className="hover:text-[#0058be]">
-                  Pricing & Bulk Rates
+                <button 
+                  onClick={() => setActiveView('design-tool')} 
+                  className="hover:text-[#0058be] transition-colors cursor-pointer"
+                >
+                  Design Studio
                 </button>
               </li>
               <li>
-                <button onClick={() => setActiveView('design-tool')} className="hover:text-[#0058be]">
-                  Interactive Studio
+                <button 
+                  onClick={() => setActiveView('how-it-works')} 
+                  className="hover:text-[#0058be] transition-colors cursor-pointer"
+                >
+                  How It Works
                 </button>
               </li>
               <li>
-                <button onClick={() => setActiveView('unit-tests')} className="hover:text-[#0058be]">
-                  Unit Test Suite
+                <button 
+                  onClick={() => setIsWishlistOpen(true)} 
+                  className="hover:text-[#0058be] transition-colors cursor-pointer flex items-center gap-1"
+                >
+                  <Heart className="w-3 h-3 text-rose-500 fill-rose-500" /> Saved Wishlist
                 </button>
               </li>
             </ul>

@@ -42,6 +42,13 @@ export const UserDashboardModal: React.FC = () => {
   const [editStore, setEditStore] = useState(user?.storeName || '');
   const [savingProfile, setSavingProfile] = useState(false);
 
+  React.useEffect(() => {
+    if (user) {
+      setEditName(user.name || '');
+      setEditStore(user.storeName || '');
+    }
+  }, [user, isDashboardOpen]);
+
   if (!isDashboardOpen) return null;
 
   const favoriteProducts = products.filter((p) => favorites.includes(p.id));
