@@ -1,10 +1,23 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { Product, User, CartItem, Order, CustomDesign, LiveNotification, FilterState, Category, Size, SortOption } from '../types';
+import {
+  Product,
+  User,
+  CartItem,
+  Order,
+  CustomDesign,
+  LiveNotification,
+  FilterState,
+  Category,
+  Size,
+  SortOption,
+  CategoryItem,
+  SubcategoryItem,
+} from '../types';
 import { api, getStoredToken } from '../services/api';
 import { subscribeToSocketEvents } from '../services/socket';
 import { INITIAL_PRODUCTS } from '../data/initialData';
 
-export type ActiveView = 'products' | 'how-it-works' | 'pricing' | 'design-tool' | 'unit-tests';
+export type ActiveView = 'products' | 'how-it-works' | 'pricing' | 'design-tool' | 'unit-tests' | 'admin';
 
 interface ToastMessage {
   id: string;
@@ -23,7 +36,13 @@ interface AppContextType {
   totalProducts: number;
   loadingProducts: boolean;
   filters: FilterState;
+  categories: CategoryItem[];
+  subcategories: SubcategoryItem[];
+  loadingCategories: boolean;
+  refreshCategories: () => Promise<void>;
+  refreshSubcategories: () => Promise<void>;
   setCategory: (cat: Category) => void;
+  setSubcategory: (subcat?: string) => void;
   toggleSizeFilter: (size: Size) => void;
   toggleColorFilter: (hex: string) => void;
   setPriceRange: (min: string, max: string) => void;
@@ -45,6 +64,8 @@ interface AppContextType {
   setQuickViewProduct: (product: Product | null) => void;
   designingProduct: Product | null;
   setDesigningProduct: (product: Product | null) => void;
+  editingCustomDesign: CustomDesign | null;
+  setEditingCustomDesign: (design: CustomDesign | null) => void;
 
   // Cart
   cart: CartItem[];
@@ -60,13 +81,18 @@ interface AppContextType {
   // Auth
   user: User | null;
   token: string | null;
+  isAdmin: boolean;
   isAuthModalOpen: boolean;
-  authModalMode: 'login' | 'register';
-  openAuthModal: (mode?: 'login' | 'register') => void;
+  authModalMode: 'login' | 'register' | 'forgot-password' | 'reset-password';
+  openAuthModal: (mode?: 'login' | 'register' | 'forgot-password' | 'reset-password') => void;
   closeAuthModal: () => void;
+  resetTokenForModal: string;
+  setResetTokenForModal: (token: string) => void;
   login: (email: string, pass: string) => Promise<void>;
-  register: (name: string, email: string, pass: string, role?: string, storeName?: string) => Promise<void>;
-  logout: () => void;
+  register: (name: string, email: string, pass: string, storeName?: string) => Promise<void>;
+  forgotPassword: (email: string) => Promise<{ success: boolean; message: string; resetToken?: string }>;
+  resetPassword: (token: string, pass: string) => Promise<{ success: boolean; message: string }>;
+  logout: () => Promise<void>;
   updateProfile: (data: { name?: string; storeName?: string; avatar?: string }) => Promise<void>;
 
   // User Dashboard Modal
@@ -124,6 +150,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
   const [totalProducts, setTotalProducts] = useState<number>(INITIAL_PRODUCTS.length);
   const [loadingProducts, setLoadingProducts] = useState<boolean>(false);
+  const [categories, setCategories] = useState<CategoryItem[]>([]);
+  const [subcategories, setSubcategories] = useState<SubcategoryItem[]>([]);
+  const [loadingCategories, setLoadingCategories] = useState<boolean>(false);
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
 
   // Favorites
@@ -139,10 +168,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Modals & Drawers
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
   const [designingProduct, setDesigningProduct] = useState<Product | null>(null);
+  const [editingCustomDesign, setEditingCustomDesign] = useState<CustomDesign | null>(null);
   const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
   const [isWishlistOpen, setIsWishlistOpen] = useState<boolean>(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
-  const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
+  const [authModalMode, setAuthModalMode] = useState<'login' | 'register' | 'forgot-password' | 'reset-password'>('login');
+  const [resetTokenForModal, setResetTokenForModal] = useState<string>('');
   const [isDashboardOpen, setIsDashboardOpen] = useState<boolean>(false);
   const [dashboardTab, setDashboardTab] = useState<'orders' | 'designs' | 'wishlist' | 'profile' | 'admin'>('orders');
   const [isAdminSimulatorOpen, setIsAdminSimulatorOpen] = useState<boolean>(false);
@@ -206,6 +237,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [cart]);
 
+  // Load Categories & Subcategories
+  const refreshCategories = useCallback(async () => {
+    try {
+      setLoadingCategories(true);
+      const res = await api.getCategories();
+      setCategories(res.categories);
+    } catch (err) {
+      console.warn('Could not fetch categories from server:', err);
+    } finally {
+      setLoadingCategories(false);
+    }
+  }, []);
+
+  const refreshSubcategories = useCallback(async () => {
+    try {
+      const res = await api.getSubcategories();
+      setSubcategories(res.subcategories);
+    } catch (err) {
+      console.warn('Could not fetch subcategories from server:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshCategories();
+    refreshSubcategories();
+  }, [refreshCategories, refreshSubcategories]);
+
   // Load Products with current filters
   const refreshProducts = useCallback(async () => {
     setLoadingProducts(true);
@@ -216,10 +274,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (err) {
       console.warn('Fallback to local product catalog filter:', err);
       let local = [...INITIAL_PRODUCTS];
-      if (filters.category && filters.category !== 'Apparel') {
-        local = local.filter((p) => p.category.toLowerCase() === filters.category.toLowerCase());
-      } else if (filters.category) {
-        local = local.filter((p) => p.category === filters.category);
+      if (filters.category && filters.category !== 'All') {
+        const catFilter = filters.category.toLowerCase();
+        local = local.filter((p) => {
+          const catName = (typeof p.category === 'object' ? p.category.name : (p.categoryName || p.category || '')).toLowerCase();
+          const catSlug = (typeof p.category === 'object' ? p.category.slug : '').toLowerCase();
+          const catId = (typeof p.category === 'object' ? p.category.id : p.category || '').toLowerCase();
+          return catName === catFilter || catSlug === catFilter || catId === catFilter;
+        });
+      }
+      if (filters.subcategory && filters.subcategory !== 'All') {
+        const subFilter = filters.subcategory.toLowerCase();
+        local = local.filter((p) => {
+          const subName = (typeof p.subcategory === 'object' ? p.subcategory.name : (p.subcategoryName || '')).toLowerCase();
+          const subSlug = (typeof p.subcategory === 'object' ? p.subcategory.slug : '').toLowerCase();
+          const subId = (typeof p.subcategory === 'object' ? p.subcategory.id : (typeof p.subcategory === 'string' ? p.subcategory : '')).toLowerCase();
+          return subName === subFilter || subSlug === subFilter || subId === subFilter;
+        });
       }
       if (filters.sizes.length > 0) {
         local = local.filter((p) => p.sizes.some((s) => filters.sizes.includes(s)));
@@ -322,7 +393,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Filter Actions
   const setCategory = (category: Category) => {
-    setFilters((prev) => ({ ...prev, category }));
+    setFilters((prev) => ({ ...prev, category, subcategory: undefined }));
+  };
+
+  const setSubcategory = (subcategory?: string) => {
+    setFilters((prev) => ({ ...prev, subcategory }));
   };
 
   const toggleSizeFilter = (size: Size) => {
@@ -417,7 +492,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const cartSubtotal = cart.reduce((sum, item) => sum + item.totalPrice, 0);
 
   // Auth Actions
-  const openAuthModal = (mode: 'login' | 'register' = 'login') => {
+  const openAuthModal = (mode: 'login' | 'register' | 'forgot-password' | 'reset-password' = 'login') => {
     setAuthModalMode(mode);
     setIsAuthModalOpen(true);
   };
@@ -436,8 +511,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const register = async (name: string, email: string, pass: string, role = 'creator', storeName?: string) => {
-    const res = await api.register({ name, email, password: pass, role, storeName });
+  const register = async (name: string, email: string, pass: string, storeName?: string) => {
+    const res = await api.register({ name, email, password: pass, storeName });
     setUser(res.user);
     setToken(res.token);
     closeAuthModal();
@@ -448,8 +523,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const logout = () => {
-    api.logout();
+  const forgotPassword = async (email: string) => {
+    const res = await api.forgotPassword(email);
+    if (res.resetToken) {
+      setResetTokenForModal(res.resetToken);
+    }
+    return res;
+  };
+
+  const resetPassword = async (resetToken: string, pass: string) => {
+    const res = await api.resetPassword(resetToken, pass);
+    return res;
+  };
+
+  const logout = async () => {
+    await api.logout();
     setUser(null);
     setToken(null);
     addToast({
@@ -547,7 +635,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         totalProducts,
         loadingProducts,
         filters,
+        categories,
+        subcategories,
+        loadingCategories,
+        refreshCategories,
+        refreshSubcategories,
         setCategory,
+        setSubcategory,
         toggleSizeFilter,
         toggleColorFilter,
         setPriceRange,
@@ -565,6 +659,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setQuickViewProduct,
         designingProduct,
         setDesigningProduct,
+        editingCustomDesign,
+        setEditingCustomDesign,
         cart,
         addToCart,
         removeFromCart,
@@ -576,12 +672,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsCartOpen,
         user,
         token,
+        isAdmin: user?.role === 'admin',
         isAuthModalOpen,
         authModalMode,
         openAuthModal,
         closeAuthModal,
+        resetTokenForModal,
+        setResetTokenForModal,
         login,
         register,
+        forgotPassword,
+        resetPassword,
         logout,
         updateProfile,
         isDashboardOpen,

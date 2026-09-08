@@ -1,4 +1,15 @@
-import { Product, Order, User, CustomDesign, LiveNotification, AuthResponse, FilterState } from '../types';
+import {
+  Product,
+  Order,
+  User,
+  CustomDesign,
+  LiveNotification,
+  AuthResponse,
+  FilterState,
+  AdminDashboardStats,
+  CategoryItem,
+  SubcategoryItem,
+} from '../types';
 
 const TOKEN_KEY = 'printflow_jwt_token';
 
@@ -22,6 +33,9 @@ export const setStoredToken = (token: string | null) => {
   }
 };
 
+// Configurable API base URL using environment variables without hardcoded localhost
+const API_BASE_URL = (((import.meta as any).env?.VITE_API_URL as string) || '').replace(/\/$/, '');
+
 const fetchJson = async <T>(url: string, options: RequestInit = {}): Promise<T> => {
   const token = getStoredToken();
   const headers = new Headers(options.headers || {});
@@ -31,7 +45,10 @@ const fetchJson = async <T>(url: string, options: RequestInit = {}): Promise<T> 
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  const response = await fetch(url, {
+  // Prepend API_BASE_URL if configured, otherwise use relative path
+  const targetUrl = API_BASE_URL ? `${API_BASE_URL}${url.startsWith('/') ? url : `/${url}`}` : url;
+
+  const response = await fetch(targetUrl, {
     ...options,
     headers,
   });
@@ -53,8 +70,8 @@ export const api = {
   // --- Products ---
   async getProducts(filters?: Partial<FilterState>): Promise<{ products: Product[]; total: number }> {
     const params = new URLSearchParams();
-    if (filters?.category && filters.category !== 'Apparel') params.set('category', filters.category);
-    else if (filters?.category) params.set('category', filters.category);
+    if (filters?.category && filters.category !== 'All') params.set('category', filters.category);
+    if (filters?.subcategory && filters.subcategory !== 'All') params.set('subcategory', filters.subcategory);
     if (filters?.sizes && filters.sizes.length > 0) params.set('sizes', filters.sizes.join(','));
     if (filters?.colors && filters.colors.length > 0) params.set('colors', filters.colors.join(','));
     if (filters?.minPrice) params.set('minPrice', filters.minPrice);
@@ -70,8 +87,87 @@ export const api = {
     return fetchJson<Product>(`/api/products/${id}`);
   },
 
-  // --- Auth ---
-  async register(data: { name: string; email: string; password: string; role?: string; storeName?: string }): Promise<AuthResponse> {
+  // --- Categories ---
+  async getCategories(params?: { status?: boolean | string; search?: string }): Promise<{ categories: CategoryItem[]; total: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.status !== undefined && params.status !== '') searchParams.set('status', String(params.status));
+    if (params?.search) searchParams.set('search', params.search);
+    const query = searchParams.toString();
+    return fetchJson<{ categories: CategoryItem[]; total: number }>(`/api/categories${query ? `?${query}` : ''}`);
+  },
+
+  async getCategoryById(id: string): Promise<CategoryItem> {
+    return fetchJson<CategoryItem>(`/api/categories/${id}`);
+  },
+
+  async createCategory(data: Partial<CategoryItem>): Promise<{ success: boolean; category: CategoryItem; message: string }> {
+    return fetchJson<{ success: boolean; category: CategoryItem; message: string }>('/api/categories', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateCategory(id: string, data: Partial<CategoryItem>): Promise<{ success: boolean; category: CategoryItem; message: string }> {
+    return fetchJson<{ success: boolean; category: CategoryItem; message: string }>(`/api/categories/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteCategory(id: string): Promise<{ success: boolean; message: string }> {
+    return fetchJson<{ success: boolean; message: string }>(`/api/categories/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async toggleCategoryStatus(id: string): Promise<{ success: boolean; category: CategoryItem; message: string }> {
+    return fetchJson<{ success: boolean; category: CategoryItem; message: string }>(`/api/categories/${id}/toggle-status`, {
+      method: 'PATCH',
+    });
+  },
+
+  // --- Subcategories ---
+  async getSubcategories(params?: { category?: string; status?: boolean | string; search?: string }): Promise<{ subcategories: SubcategoryItem[]; total: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.category && params.category !== 'all') searchParams.set('category', params.category);
+    if (params?.status !== undefined && params.status !== '') searchParams.set('status', String(params.status));
+    if (params?.search) searchParams.set('search', params.search);
+    const query = searchParams.toString();
+    return fetchJson<{ subcategories: SubcategoryItem[]; total: number }>(`/api/subcategories${query ? `?${query}` : ''}`);
+  },
+
+  async getSubcategoryById(id: string): Promise<SubcategoryItem> {
+    return fetchJson<SubcategoryItem>(`/api/subcategories/${id}`);
+  },
+
+  async createSubcategory(data: Partial<SubcategoryItem>): Promise<{ success: boolean; subcategory: SubcategoryItem; message: string }> {
+    return fetchJson<{ success: boolean; subcategory: SubcategoryItem; message: string }>('/api/subcategories', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateSubcategory(id: string, data: Partial<SubcategoryItem>): Promise<{ success: boolean; subcategory: SubcategoryItem; message: string }> {
+    return fetchJson<{ success: boolean; subcategory: SubcategoryItem; message: string }>(`/api/subcategories/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteSubcategory(id: string): Promise<{ success: boolean; message: string }> {
+    return fetchJson<{ success: boolean; message: string }>(`/api/subcategories/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async toggleSubcategoryStatus(id: string): Promise<{ success: boolean; subcategory: SubcategoryItem; message: string }> {
+    return fetchJson<{ success: boolean; subcategory: SubcategoryItem; message: string }>(`/api/subcategories/${id}/toggle-status`, {
+      method: 'PATCH',
+    });
+  },
+
+  // --- Auth & Profile ---
+  async register(data: { name: string; email: string; password: string; storeName?: string }): Promise<AuthResponse> {
     const res = await fetchJson<AuthResponse>('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -89,6 +185,20 @@ export const api = {
     return res;
   },
 
+  async forgotPassword(email: string): Promise<{ success: boolean; message: string; resetToken?: string }> {
+    return fetchJson<{ success: boolean; message: string; resetToken?: string }>('/api/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  async resetPassword(token: string, newPassword: string): Promise<{ success: boolean; message: string }> {
+    return fetchJson<{ success: boolean; message: string }>('/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, newPassword }),
+    });
+  },
+
   async getMe(): Promise<{ user: User }> {
     return fetchJson<{ user: User }>('/api/auth/me');
   },
@@ -102,7 +212,12 @@ export const api = {
     return res;
   },
 
-  logout() {
+  async logout(): Promise<void> {
+    try {
+      await fetchJson('/api/auth/logout', { method: 'POST' });
+    } catch {
+      // Best-effort server notification
+    }
     setStoredToken(null);
   },
 
@@ -134,6 +249,10 @@ export const api = {
     return fetchJson<{ designs: CustomDesign[] }>('/api/designs');
   },
 
+  async getDesignById(id: string): Promise<{ design: CustomDesign }> {
+    return fetchJson<{ design: CustomDesign }>(`/api/designs/${id}`);
+  },
+
   async saveDesign(designData: Partial<CustomDesign>): Promise<CustomDesign> {
     return fetchJson<CustomDesign>('/api/designs', {
       method: 'POST',
@@ -156,6 +275,85 @@ export const api = {
     return fetchJson<{ success: boolean }>('/api/notifications/read', {
       method: 'POST',
       body: JSON.stringify({ id }),
+    });
+  },
+
+  // --- Admin APIS ---
+  async getAdminDashboard(): Promise<AdminDashboardStats> {
+    return fetchJson<AdminDashboardStats>('/api/admin/dashboard');
+  },
+
+  async getAdminUsers(params?: { q?: string; role?: string }): Promise<{ users: User[]; total: number }> {
+    const query = new URLSearchParams();
+    if (params?.q) query.set('q', params.q);
+    if (params?.role) query.set('role', params.role);
+    const qs = query.toString();
+    return fetchJson<{ users: User[]; total: number }>(`/api/admin/users${qs ? `?${qs}` : ''}`);
+  },
+
+  async updateAdminUser(id: string, data: Partial<User>): Promise<{ success: boolean; user: User; message: string }> {
+    return fetchJson<{ success: boolean; user: User; message: string }>(`/api/admin/users/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteAdminUser(id: string): Promise<{ success: boolean; message: string }> {
+    return fetchJson<{ success: boolean; message: string }>(`/api/admin/users/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async createAdminProduct(productData: Partial<Product>): Promise<{ success: boolean; product: Product; message: string }> {
+    return fetchJson<{ success: boolean; product: Product; message: string }>('/api/admin/products', {
+      method: 'POST',
+      body: JSON.stringify(productData),
+    });
+  },
+
+  async updateAdminProduct(id: string, productData: Partial<Product>): Promise<{ success: boolean; product: Product; message: string }> {
+    return fetchJson<{ success: boolean; product: Product; message: string }>(`/api/admin/products/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(productData),
+    });
+  },
+
+  async deleteAdminProduct(id: string): Promise<{ success: boolean; message: string }> {
+    return fetchJson<{ success: boolean; message: string }>(`/api/admin/products/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async toggleAdminProductStock(id: string): Promise<{ success: boolean; product: Product; inStock: boolean }> {
+    return fetchJson<{ success: boolean; product: Product; inStock: boolean }>(`/api/admin/products/${id}/toggle`, {
+      method: 'PATCH',
+    });
+  },
+
+  async getAdminOrders(): Promise<{ orders: Order[]; total: number }> {
+    return fetchJson<{ orders: Order[]; total: number }>('/api/admin/orders');
+  },
+
+  async updateAdminOrder(id: string, data: Partial<Order>): Promise<{ success: boolean; order: Order; message: string }> {
+    return fetchJson<{ success: boolean; order: Order; message: string }>(`/api/admin/orders/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteAdminOrder(id: string): Promise<{ success: boolean; message: string }> {
+    return fetchJson<{ success: boolean; message: string }>(`/api/admin/orders/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async getAdminDesigns(): Promise<{ designs: CustomDesign[]; total: number }> {
+    return fetchJson<{ designs: CustomDesign[]; total: number }>('/api/admin/designs');
+  },
+
+  async deleteAdminDesign(id: string): Promise<{ success: boolean; message: string }> {
+    return fetchJson<{ success: boolean; message: string }>(`/api/admin/designs/${id}`, {
+      method: 'DELETE',
     });
   },
 

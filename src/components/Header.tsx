@@ -16,7 +16,8 @@ import {
   Sparkles,
   PackageCheck,
   Layers,
-  ArrowRight
+  ArrowRight,
+  Shield
 } from 'lucide-react';
 
 const CATEGORIES: { label: string; value: Category | 'All' }[] = [
@@ -48,7 +49,20 @@ export const Header: React.FC = () => {
     filters,
     setSearchQuery,
     setCategory,
+    categories,
   } = useApp();
+
+  const categoryOptions = [
+    { label: 'All Categories', value: 'All' },
+    ...(categories && categories.length > 0
+      ? categories.filter((c) => c.status !== false).map((c) => ({ label: c.name, value: c.name }))
+      : [
+          { label: 'Apparel', value: 'Apparel' },
+          { label: 'Home Decor', value: 'Home Decor' },
+          { label: 'Accessories', value: 'Accessories' },
+          { label: 'Stationery', value: 'Stationery' },
+        ]),
+  ];
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
@@ -137,18 +151,18 @@ export const Header: React.FC = () => {
                   <div className="px-3 py-1.5 text-[10px] font-bold text-[#727785] uppercase tracking-wider border-b border-[#f0f0f2]">
                     Filter by Category
                   </div>
-                  {CATEGORIES.map((cat) => (
+                  {categoryOptions.map((cat) => (
                     <button
                       key={cat.label}
                       onClick={() => handleCategorySelect(cat.value)}
                       className={`w-full text-left px-3.5 py-2 text-xs transition-colors flex items-center justify-between ${
-                        filters.category === cat.value
+                        filters.category === cat.value || (cat.value === 'All' && (!filters.category || filters.category === 'All'))
                           ? 'bg-[#d8e2ff]/50 text-[#0058be] font-bold'
                           : 'text-[#424754] hover:bg-[#f9f9f9]'
                       }`}
                     >
                       {cat.label}
-                      {filters.category === cat.value && (
+                      {(filters.category === cat.value || (cat.value === 'All' && (!filters.category || filters.category === 'All'))) && (
                         <span className="w-1.5 h-1.5 rounded-full bg-[#0058be]"></span>
                       )}
                     </button>
@@ -326,6 +340,23 @@ export const Header: React.FC = () => {
             )}
           </button>
 
+          {/* Admin Direct Button if logged in as Admin */}
+          {user?.role === 'admin' && (
+            <button
+              onClick={() => setActiveView('admin')}
+              id="btn-header-admin-direct"
+              className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                activeView === 'admin'
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : 'bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200'
+              }`}
+              title="Open Admin Control Center"
+            >
+              <Shield className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">Admin Panel</span>
+            </button>
+          )}
+
           {/* Auth Button or User Profile */}
           {user ? (
             <div className="relative" ref={userDropdownRef}>
@@ -358,6 +389,20 @@ export const Header: React.FC = () => {
                       {user.role} Account
                     </span>
                   </div>
+
+                  {user.role === 'admin' && (
+                    <button
+                      onClick={() => {
+                        setUserDropdownOpen(false);
+                        setActiveView('admin');
+                      }}
+                      id="menu-admin-dashboard-link"
+                      className="w-full text-left px-3.5 py-2 text-xs font-bold text-purple-700 hover:bg-purple-50 flex items-center gap-2 cursor-pointer border-b border-[#f3f3f4]"
+                    >
+                      <Shield className="w-3.5 h-3.5 text-purple-600" /> Admin Dashboard
+                    </button>
+                  )}
+
                   <button
                     onClick={() => {
                       setUserDropdownOpen(false);
@@ -514,12 +559,30 @@ export const Header: React.FC = () => {
               <ArrowRight className="w-4 h-4" />
             </button>
 
+            {user?.role === 'admin' && (
+              <button
+                onClick={() => {
+                  setActiveView('admin');
+                  setMobileMenuOpen(false);
+                }}
+                className={`w-full text-left px-3 py-2 rounded-lg text-sm font-bold flex items-center justify-between transition-colors ${
+                  activeView === 'admin' ? 'bg-purple-100 text-purple-900 font-bold' : 'text-purple-700 bg-purple-50 hover:bg-purple-100'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Shield className="w-4 h-4 text-purple-600" />
+                  <span>Admin Dashboard</span>
+                </div>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            )}
+
             <div className="border-t border-[#f0f0f2] pt-3">
               <div className="text-[11px] font-bold text-[#727785] uppercase tracking-wider mb-2">
                 Quick Category Filters
               </div>
               <div className="grid grid-cols-2 gap-2">
-                {CATEGORIES.filter(c => c.value !== 'All').map((cat) => (
+                {categoryOptions.filter(c => c.value !== 'All').map((cat) => (
                   <button
                     key={cat.label}
                     onClick={() => {

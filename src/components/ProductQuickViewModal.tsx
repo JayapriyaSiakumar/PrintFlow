@@ -71,10 +71,15 @@ export const ProductQuickViewModal: React.FC = () => {
         {/* Product Details Column */}
         <div className="md:w-1/2 p-6 md:p-8 flex flex-col overflow-y-auto">
           
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className="text-xs font-semibold text-[#0058be] uppercase tracking-wider bg-[#d8e2ff] px-2 py-0.5 rounded">
-              {quickViewProduct.category}
+              {typeof quickViewProduct.category === 'object' ? quickViewProduct.category.name : (quickViewProduct.categoryName || quickViewProduct.category)}
             </span>
+            {(quickViewProduct.subcategory || quickViewProduct.subcategoryName) && (
+              <span className="text-xs font-semibold text-[#555f6f] uppercase tracking-wider bg-[#eeeeee] px-2 py-0.5 rounded">
+                {typeof quickViewProduct.subcategory === 'object' ? quickViewProduct.subcategory.name : (quickViewProduct.subcategoryName || quickViewProduct.subcategory)}
+              </span>
+            )}
             <div className="flex items-center text-amber-500 text-xs font-bold gap-1">
               <Star className="w-3.5 h-3.5 fill-amber-500" />
               <span>{quickViewProduct.rating}</span>

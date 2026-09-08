@@ -16,13 +16,35 @@ import { WishlistDrawer } from './components/WishlistDrawer';
 import { OrderSuccessModal } from './components/OrderSuccessModal';
 import { UserDashboardModal } from './components/UserDashboardModal';
 import { AdminLiveSimulator } from './components/AdminLiveSimulator';
+import { AdminDashboard } from './components/AdminDashboard';
 import { HowItWorksView } from './components/HowItWorksView';
 import { PricingView } from './components/PricingView';
 import { UnitTestsRunnerModal } from './components/UnitTestsRunnerModal';
 import { Footer } from './components/Footer';
 
 const MainLayout: React.FC = () => {
-  const { activeView } = useApp();
+  const { activeView, setActiveView, products, setDesigningProduct } = useApp();
+
+  // Listen for /customize/:productId routing
+  React.useEffect(() => {
+    const handleUrlRoute = () => {
+      const path = window.location.pathname;
+      if (path.startsWith('/customize/')) {
+        const prodIdOrSlug = path.replace('/customize/', '').trim();
+        if (prodIdOrSlug && products.length > 0) {
+          const matched = products.find((p) => p.id === prodIdOrSlug || p.slug === prodIdOrSlug);
+          if (matched) {
+            setDesigningProduct(matched);
+            setActiveView('design-tool');
+          }
+        }
+      }
+    };
+
+    handleUrlRoute();
+    window.addEventListener('popstate', handleUrlRoute);
+    return () => window.removeEventListener('popstate', handleUrlRoute);
+  }, [products, setActiveView, setDesigningProduct]);
 
   return (
     <div className="min-h-screen bg-[#f9f9f9] text-[#1a1c1c] flex flex-col font-['Inter'] antialiased">
@@ -47,6 +69,7 @@ const MainLayout: React.FC = () => {
         {activeView === 'pricing' && <PricingView />}
         {activeView === 'design-tool' && <DesignStudioModal />}
         {activeView === 'unit-tests' && <UnitTestsRunnerModal />}
+        {activeView === 'admin' && <AdminDashboard />}
       </main>
 
       {/* Overlays, Drawers & Modals */}

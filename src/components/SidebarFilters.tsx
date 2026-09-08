@@ -1,16 +1,24 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { Category, Size } from '../types';
+import { Size, CategoryItem } from '../types';
 import { AVAILABLE_COLORS } from '../data/initialData';
-import { Check, RotateCcw } from 'lucide-react';
+import { Check, RotateCcw, ChevronRight, Layers } from 'lucide-react';
 
-const CATEGORIES: Category[] = ['Apparel', 'Home Decor', 'Accessories', 'Stationery'];
+const DEFAULT_CATEGORIES: { name: string; slug: string }[] = [
+  { name: 'Apparel', slug: 'apparel' },
+  { name: 'Home Decor', slug: 'home-decor' },
+  { name: 'Accessories', slug: 'accessories' },
+  { name: 'Stationery', slug: 'stationery' },
+];
 const SIZES: Size[] = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 
 export const SidebarFilters: React.FC = () => {
   const {
     filters,
+    categories,
+    subcategories,
     setCategory,
+    setSubcategory,
     toggleSizeFilter,
     toggleColorFilter,
     setPriceRange,
@@ -32,11 +40,17 @@ export const SidebarFilters: React.FC = () => {
   };
 
   const hasActiveFilters =
+    (filters.category && filters.category !== 'All') ||
+    filters.subcategory ||
     filters.sizes.length > 0 ||
     filters.colors.length > 0 ||
     filters.minPrice !== '' ||
     filters.maxPrice !== '' ||
     filters.searchQuery !== '';
+
+  const activeCategories = categories && categories.length > 0
+    ? categories.filter(c => c.status !== false)
+    : DEFAULT_CATEGORIES.map(c => ({ id: c.slug, name: c.name, slug: c.slug, status: true } as CategoryItem));
 
   return (
     <aside className="w-full lg:w-64 flex-shrink-0 flex flex-col gap-8 select-none">
@@ -44,43 +58,148 @@ export const SidebarFilters: React.FC = () => {
       {/* Categories */}
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
-          <span className="font-['Inter'] text-sm font-bold text-[#1a1c1c] uppercase tracking-widest">
+          <span className="font-['Inter'] text-sm font-bold text-[#1a1c1c] uppercase tracking-widest flex items-center gap-1.5">
+            <Layers className="w-4 h-4 text-[#0058be]" />
             Categories
           </span>
           {hasActiveFilters && (
             <button
               onClick={handleReset}
-              className="text-xs text-[#0058be] hover:underline flex items-center gap-1 font-medium"
+              className="text-xs text-[#0058be] hover:underline flex items-center gap-1 font-medium cursor-pointer"
             >
               <RotateCcw className="w-3 h-3" /> Reset
             </button>
           )}
         </div>
 
-        <div className="flex flex-col gap-2.5">
-          {CATEGORIES.map((cat) => {
-            const isSelected = filters.category === cat;
+        <div className="flex flex-col gap-1.5">
+          {/* All Categories option */}
+          <label
+            onClick={() => {
+              setCategory('All');
+              setSubcategory(undefined);
+            }}
+            className="flex items-center gap-3 py-1 px-1.5 rounded-lg hover:bg-[#e8e8e8]/60 cursor-pointer group transition-colors"
+          >
+            <div
+              className={`w-4 h-4 rounded flex items-center justify-center transition-all ${
+                filters.category === 'All' || !filters.category ? 'bg-[#0058be] text-white' : 'bg-[#e2e2e2] text-transparent group-hover:bg-[#dadada]'
+              }`}
+            >
+              <Check className={`w-3 h-3 stroke-[3] transition-opacity ${filters.category === 'All' || !filters.category ? 'opacity-100' : 'opacity-0'}`} />
+            </div>
+            <span
+              className={`font-['Inter'] text-sm transition-colors ${
+                filters.category === 'All' || !filters.category ? 'font-semibold text-[#0058be]' : 'text-[#424754] group-hover:text-[#0058be]'
+              }`}
+            >
+              All Products
+            </span>
+          </label>
+
+          {activeCategories.map((cat) => {
+            const isSelected =
+              filters.category?.toLowerCase() === cat.name.toLowerCase() ||
+              filters.category?.toLowerCase() === cat.slug.toLowerCase() ||
+              filters.category === cat.id;
+
+            // Find child subcategories for this category
+            const childSubcategories = (subcategories || []).filter((sub) => {
+              if (sub.status === false) return false;
+              const subCatId = typeof sub.category === 'object' ? sub.category.id || sub.category._id : sub.category;
+              const catId = cat.id || cat._id;
+              const catName = cat.name.toLowerCase();
+              const catSlug = cat.slug.toLowerCase();
+              return subCatId === catId || subCatId === catName || subCatId === catSlug;
+            });
+
             return (
-              <label
-                key={cat}
-                onClick={() => setCategory(cat)}
-                className="flex items-center gap-3.5 cursor-pointer group"
-              >
+              <div key={cat.id || cat.slug} className="flex flex-col">
                 <div
-                  className={`w-5 h-5 rounded flex items-center justify-center transition-all ${
-                    isSelected ? 'bg-[#0058be] text-white' : 'bg-[#e2e2e2] text-transparent group-hover:bg-[#dadada]'
+                  onClick={() => {
+                    if (isSelected) {
+                      // Clicking selected category toggles to All
+                      setCategory('All');
+                      setSubcategory(undefined);
+                    } else {
+                      setCategory(cat.name);
+                    }
+                  }}
+                  className={`flex items-center justify-between py-1.5 px-2 rounded-lg cursor-pointer group transition-colors ${
+                    isSelected ? 'bg-[#d8e2ff]/40 text-[#0058be]' : 'hover:bg-[#e8e8e8]/60 text-[#424754]'
                   }`}
                 >
-                  <Check className={`w-3.5 h-3.5 stroke-[3] transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0'}`} />
+                  <div className="flex items-center gap-2.5">
+                    <div
+                      className={`w-4 h-4 rounded flex items-center justify-center transition-all ${
+                        isSelected ? 'bg-[#0058be] text-white' : 'bg-[#e2e2e2] text-transparent group-hover:bg-[#dadada]'
+                      }`}
+                    >
+                      <Check className={`w-3 h-3 stroke-[3] transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0'}`} />
+                    </div>
+                    <span
+                      className={`font-['Inter'] text-sm ${
+                        isSelected ? 'font-semibold text-[#0058be]' : 'group-hover:text-[#0058be]'
+                      }`}
+                    >
+                      {cat.name}
+                    </span>
+                  </div>
+
+                  {childSubcategories.length > 0 && (
+                    <span className="text-[11px] font-medium text-[#727785] bg-white/70 px-1.5 py-0.5 rounded-md border border-[#e2e2e2]">
+                      {childSubcategories.length}
+                    </span>
+                  )}
                 </div>
-                <span
-                  className={`font-['Inter'] text-sm transition-colors ${
-                    isSelected ? 'font-semibold text-[#0058be]' : 'text-[#424754] group-hover:text-[#0058be]'
-                  }`}
-                >
-                  {cat}
-                </span>
-              </label>
+
+                {/* Subcategories (visible when category is selected) */}
+                {isSelected && childSubcategories.length > 0 && (
+                  <div className="ml-5 pl-2.5 my-1.5 border-l-2 border-[#0058be]/25 flex flex-col gap-1">
+                    {/* All in Category */}
+                    <button
+                      type="button"
+                      onClick={() => setSubcategory(undefined)}
+                      className={`text-left text-xs py-1 px-2 rounded flex items-center justify-between transition-colors ${
+                        !filters.subcategory || filters.subcategory === 'All'
+                          ? 'font-bold text-[#0058be] bg-[#0058be]/10'
+                          : 'text-[#585e6e] hover:text-[#0058be] hover:bg-[#f0f0f2]'
+                      }`}
+                    >
+                      <span>All {cat.name}</span>
+                      {(!filters.subcategory || filters.subcategory === 'All') && (
+                        <Check className="w-3 h-3 text-[#0058be]" />
+                      )}
+                    </button>
+
+                    {childSubcategories.map((sub) => {
+                      const isSubSelected =
+                        filters.subcategory?.toLowerCase() === sub.name.toLowerCase() ||
+                        filters.subcategory?.toLowerCase() === sub.slug.toLowerCase() ||
+                        filters.subcategory === sub.id;
+
+                      return (
+                        <button
+                          key={sub.id || sub.slug}
+                          type="button"
+                          onClick={() => setSubcategory(isSubSelected ? undefined : sub.name)}
+                          className={`text-left text-xs py-1 px-2 rounded flex items-center justify-between transition-colors ${
+                            isSubSelected
+                              ? 'font-bold text-[#0058be] bg-[#0058be]/10'
+                              : 'text-[#585e6e] hover:text-[#0058be] hover:bg-[#f0f0f2]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <ChevronRight className={`w-3 h-3 ${isSubSelected ? 'text-[#0058be]' : 'text-[#a1a5b0]'}`} />
+                            <span>{sub.name}</span>
+                          </div>
+                          {isSubSelected && <Check className="w-3 h-3 text-[#0058be]" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>

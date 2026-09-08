@@ -17,6 +17,7 @@ import {
   ShoppingBag,
   Store,
   Key,
+  ArrowRight,
 } from 'lucide-react';
 
 export const UserDashboardModal: React.FC = () => {
@@ -33,6 +34,7 @@ export const UserDashboardModal: React.FC = () => {
     favorites,
     products,
     setDesigningProduct,
+    setEditingCustomDesign,
     setActiveView,
     addToCart,
     updateProfile,
@@ -166,6 +168,20 @@ export const UserDashboardModal: React.FC = () => {
             <User className="w-4 h-4" />
             <span>Profile & JWT Security</span>
           </button>
+
+          {user?.role === 'admin' && (
+            <button
+              onClick={() => setDashboardTab('admin')}
+              className={`py-3.5 text-xs font-semibold flex items-center gap-2 border-b-2 transition-colors ${
+                dashboardTab === 'admin'
+                  ? 'border-[#6b38d4] text-[#6b38d4]'
+                  : 'border-transparent text-[#6b38d4] hover:text-purple-800'
+              }`}
+            >
+              <Shield className="w-4 h-4 text-[#6b38d4]" />
+              <span>Admin Center</span>
+            </button>
+          )}
         </div>
 
         {/* Tab Content Area */}
@@ -266,8 +282,12 @@ export const UserDashboardModal: React.FC = () => {
                 savedDesigns.map((dsg) => (
                   <div key={dsg.id} className="bg-white rounded-xl p-4 border border-[#e2e2e2] flex flex-col justify-between gap-3 shadow-xs">
                     <div className="flex gap-3">
-                      <div className="w-20 h-20 bg-[#eeeeee] rounded-lg p-2 flex items-center justify-center relative">
-                        <img src={dsg.productImage} alt={dsg.name} className="w-full h-full object-contain mix-blend-multiply" />
+                      <div className="w-20 h-20 bg-[#eeeeee] rounded-lg p-2 flex items-center justify-center relative overflow-hidden">
+                        <img
+                          src={dsg.previewFrontUrl || dsg.previewDataUrl || dsg.productImage}
+                          alt={dsg.name}
+                          className="w-full h-full object-contain mix-blend-multiply"
+                        />
                         <span
                           className="absolute bottom-1 right-1 w-3 h-3 rounded-full border border-white"
                           style={{ backgroundColor: dsg.selectedColorHex }}
@@ -292,6 +312,7 @@ export const UserDashboardModal: React.FC = () => {
                         onClick={() => {
                           const target = products.find((p) => p.id === dsg.productId) || products[0];
                           setDesigningProduct(target);
+                          setEditingCustomDesign(dsg);
                           setIsDashboardOpen(false);
                           setActiveView('design-tool');
                         }}
@@ -391,6 +412,45 @@ export const UserDashboardModal: React.FC = () => {
                 </p>
                 <div className="p-3 bg-[#f3f3f4] rounded-lg font-mono text-[11px] text-[#424754] break-all select-all">
                   {token || 'No active JWT token stored (Guest mode)'}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: ADMIN MANAGEMENT */}
+          {dashboardTab === 'admin' && user?.role === 'admin' && (
+            <div className="space-y-4">
+              <div className="bg-white p-6 rounded-2xl border border-purple-200 shadow-xs space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center">
+                    <Shield className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-base text-[#1a1c1c]">
+                      Administrator Control Center
+                    </h3>
+                    <p className="text-xs text-[#555f6f]">
+                      Authenticated as System Administrator: <span className="font-semibold text-purple-700">{user.email}</span>
+                    </p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-[#555f6f] leading-relaxed">
+                  You have full administrative privileges to manage registered users, update customer order statuses, create and edit catalog products, and broadcast real-time announcements.
+                </p>
+
+                <div className="pt-2 flex flex-col sm:flex-row gap-3">
+                  <button
+                    onClick={() => {
+                      setIsDashboardOpen(false);
+                      setActiveView('admin');
+                    }}
+                    id="btn-modal-open-full-admin"
+                    className="px-5 py-2.5 rounded-xl bg-[#6b38d4] hover:bg-[#582db5] text-white text-xs font-semibold flex items-center justify-center gap-2 shadow-sm transition-colors"
+                  >
+                    <span>Launch Dedicated Admin Dashboard</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             </div>

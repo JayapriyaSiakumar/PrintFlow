@@ -131,9 +131,9 @@ export const CartDrawer: React.FC = () => {
                 cart.map((item) => (
                   <div key={item.id} className="py-4 flex gap-3.5 items-start">
                     <img
-                      src={item.product.image}
+                      src={item.customDesign?.previewDataUrl || item.product.image}
                       alt={item.product.name}
-                      className="w-16 h-20 rounded-lg object-contain bg-[#eeeeee] mix-blend-multiply flex-shrink-0"
+                      className="w-16 h-20 rounded-lg object-contain bg-[#eeeeee] mix-blend-multiply flex-shrink-0 border border-[#e2e8f0]"
                     />
 
                     <div className="flex-1 min-w-0">
@@ -141,7 +141,7 @@ export const CartDrawer: React.FC = () => {
                         <h4 className="font-semibold text-xs text-[#1a1c1c] truncate">{item.product.name}</h4>
                         <button
                           onClick={() => removeFromCart(item.id)}
-                          className="text-[#727785] hover:text-[#ba1a1a] p-1 transition-colors"
+                          className="text-[#727785] hover:text-[#ba1a1a] p-1 transition-colors cursor-pointer"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -159,9 +159,21 @@ export const CartDrawer: React.FC = () => {
                         </span>
                       </div>
 
-                      {item.customDesign?.text && (
-                        <div className="mt-1.5 px-2 py-0.5 rounded bg-blue-50 border border-blue-100 text-[10px] text-[#0058be] font-medium truncate">
-                          🎨 Custom: "{item.customDesign.text}" ({item.customDesign.placement})
+                      {item.customDesign && (
+                        <div className="mt-1.5 px-2 py-1 rounded bg-blue-50/80 border border-blue-100 text-[10px] text-[#0058be] font-medium space-y-0.5">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold uppercase tracking-wider text-[9px]">Custom Printed</span>
+                            {item.customDesign.sides && (
+                              <span className="text-[10px] font-semibold text-blue-800">
+                                {item.customDesign.sides.front?.elements.length || 0} Front / {item.customDesign.sides.back?.elements.length || 0} Back
+                              </span>
+                            )}
+                          </div>
+                          {item.customDesign.text && (
+                            <div className="truncate text-[10px] text-[#555f6f]">
+                              "{item.customDesign.text}"
+                            </div>
+                          )}
                         </div>
                       )}
 
