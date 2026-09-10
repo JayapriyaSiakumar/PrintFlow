@@ -4,6 +4,7 @@ import { DesignElement, DesignSide, Product, ProductColor } from '../../types';
 import { PrintableAreaConfig } from './types';
 import { ZoomControls } from './ZoomControls';
 import { Eye, EyeOff, Lock, Unlock, Move } from 'lucide-react';
+import { generateProductPreview, loadSafeImage } from '../../utils/previewGenerator';
 
 interface CanvasEditorProps {
   product: Product | null;
@@ -34,12 +35,15 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage | null>(null);
+  const baseLayerRef = useRef<Konva.Layer | null>(null);
   const layerRef = useRef<Konva.Layer | null>(null);
   const guideLayerRef = useRef<Konva.Layer | null>(null);
   const transformerRef = useRef<Konva.Transformer | null>(null);
 
   // Loaded images cache
   const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
+  // Base product image cache
+  const baseImageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
 
   // Zoom state
   const [zoom, setZoom] = useState<number>(1);
@@ -114,10 +118,26 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     if (isPanning) setIsPanning(false);
   };
 
-  // Expose exportPreviewDataUrl
+  // Expose exportPreviewDataUrl with base product mockup guaranteed as Layer 1
   useEffect(() => {
     if (onExportPreviewRef) {
       onExportPreviewRef.current = async () => {
+        try {
+          // Generate high-definition composite preview with default or product image as Layer 1
+          const previewResult = await generateProductPreview({
+            product,
+            selectedColor,
+            activeSide,
+            printArea,
+            elements,
+          });
+          if (previewResult.dataUrl) {
+            return previewResult.dataUrl;
+          }
+        } catch (err) {
+          console.warn('Dedicated preview generator error, checking Konva stage:', err);
+        }
+
         const stage = stageRef.current;
         const guideLayer = guideLayerRef.current;
         const transformer = transformerRef.current;
@@ -138,10 +158,15 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         stage.position({ x: 0, y: 0 });
         stage.draw();
 
-        const dataUrl = stage.toDataURL({
-          pixelRatio: 2,
-          mimeType: 'image/png',
-        });
+        let dataUrl = '';
+        try {
+          dataUrl = stage.toDataURL({
+            pixelRatio: 2,
+            mimeType: 'image/png',
+          });
+        } catch (e) {
+          console.warn('stage.toDataURL failed:', e);
+        }
 
         // Restore
         stage.scale(oldScale);
@@ -156,7 +181,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         return dataUrl;
       };
     }
-  }, [onExportPreviewRef]);
+  }, [onExportPreviewRef, product, selectedColor, activeSide, printArea, elements]);
 
   // Initialize Stage & Layers
   useEffect(() => {
@@ -170,11 +195,16 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     });
     stageRef.current = stage;
 
-    // Background and Design Layers
-    const mainLayer = new Konva.Layer();
-    const guideLayer = new Konva.Layer();
+    // Base Product Layer, Main Design Layer, and Guide Layer
+    const baseLayer = new Konva.Layer({ name: 'base-product-layer' });
+    const mainLayer = new Konva.Layer({ name: 'main-design-layer' });
+    const guideLayer = new Konva.Layer({ name: 'guide-layer' });
+
+    stage.add(baseLayer);
     stage.add(mainLayer);
     stage.add(guideLayer);
+
+    baseLayerRef.current = baseLayer;
     layerRef.current = mainLayer;
     guideLayerRef.current = guideLayer;
 
@@ -210,9 +240,14 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     mainLayer.add(tr);
     transformerRef.current = tr;
 
-    // Deselect when clicking on empty stage
+    // Deselect when clicking on empty stage or base mockup
     stage.on('click tap', (e) => {
-      if (e.target === stage || e.target.name() === 'background-mockup') {
+      if (
+        e.target === stage ||
+        e.target.name() === 'background-mockup' ||
+        e.target.name() === 'base-product-image' ||
+        e.target.name() === 'color-tint-overlay'
+      ) {
         onSelectElement(null);
       }
     });
@@ -220,8 +255,143 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     return () => {
       stage.destroy();
       stageRef.current = null;
+      baseLayerRef.current = null;
+      layerRef.current = null;
+      guideLayerRef.current = null;
+      transformerRef.current = null;
     };
   }, []);
+
+  // Render Base Product Mockup Layer (First / Bottom Layer of Canvas)
+  useEffect(() => {
+    const baseLayer = baseLayerRef.current;
+    if (!baseLayer) return;
+
+    const activeSideMockup = product?.mockupImages?.find((m) => m.side === activeSide);
+    const productImageUrl =
+      activeSideMockup?.url ||
+      product?.image ||
+      'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=800&q=80';
+
+    const drawBaseContent = (img: HTMLImageElement) => {
+      if (!baseLayerRef.current) return;
+      baseLayer.destroyChildren();
+
+      // 1. Crisp canvas background card
+      const bgCard = new Konva.Rect({
+        x: 0,
+        y: 0,
+        width: STAGE_WIDTH,
+        height: STAGE_HEIGHT,
+        fill: '#fcfcfd',
+        cornerRadius: 24,
+        name: 'background-mockup',
+      });
+      baseLayer.add(bgCard);
+
+      // 2. Aspect-ratio fitting math
+      const padding = 16;
+      const availW = STAGE_WIDTH - padding * 2;
+      const availH = STAGE_HEIGHT - padding * 2;
+      const naturalW = img.naturalWidth || 500;
+      const naturalH = img.naturalHeight || 540;
+      const imgRatio = naturalW / naturalH;
+      const targetRatio = availW / availH;
+
+      let drawW = availW;
+      let drawH = availH;
+      if (imgRatio > targetRatio) {
+        drawW = availW;
+        drawH = availW / imgRatio;
+      } else {
+        drawH = availH;
+        drawW = availH * imgRatio;
+      }
+
+      const drawX = Math.round((STAGE_WIDTH - drawW) / 2);
+      const drawY = Math.round((STAGE_HEIGHT - drawH) / 2);
+
+      // 3. Product Mockup Image as Base Layer
+      const productImageNode = new Konva.Image({
+        image: img,
+        x: drawX,
+        y: drawY,
+        width: drawW,
+        height: drawH,
+        name: 'base-product-image',
+      });
+      baseLayer.add(productImageNode);
+
+      // 4. Garment Color Tint Overlay
+      if (selectedColor.hex && selectedColor.hex.toLowerCase() !== '#ffffff') {
+        const tintRect = new Konva.Rect({
+          x: drawX,
+          y: drawY,
+          width: drawW,
+          height: drawH,
+          fill: selectedColor.hex,
+          opacity: 0.36,
+          globalCompositeOperation: 'multiply',
+          cornerRadius: 8,
+          name: 'color-tint-overlay',
+        });
+        baseLayer.add(tintRect);
+      }
+
+      // 5. Back View Indicator Pill
+      if (activeSide === 'back') {
+        const backPill = new Konva.Group({
+          x: STAGE_WIDTH - 106,
+          y: 16,
+          listening: false,
+        });
+        backPill.add(
+          new Konva.Rect({
+            width: 90,
+            height: 22,
+            fill: '#1a1c1c',
+            opacity: 0.7,
+            cornerRadius: 11,
+          })
+        );
+        backPill.add(
+          new Konva.Text({
+            text: 'BACK VIEW',
+            fontSize: 9,
+            fontFamily: 'Inter',
+            fontStyle: 'bold',
+            fill: '#ffffff',
+            width: 90,
+            y: 6,
+            align: 'center',
+          })
+        );
+        baseLayer.add(backPill);
+      }
+
+      baseLayer.batchDraw();
+    };
+
+    const cached = baseImageCacheRef.current.get(productImageUrl);
+    if (cached && cached.complete && cached.naturalWidth > 0) {
+      drawBaseContent(cached);
+    } else {
+      let isCurrent = true;
+      loadSafeImage(productImageUrl)
+        .then((img) => {
+          if (!isCurrent) return;
+          baseImageCacheRef.current.set(productImageUrl, img);
+          drawBaseContent(img);
+        })
+        .catch((err) => {
+          console.warn('Failed to load base product mockup image:', productImageUrl, err);
+        });
+
+      return () => {
+        isCurrent = false;
+      };
+    }
+  }, [product, selectedColor, activeSide]);
 
   // Update Guides (Printable Area & Safe Zone)
   useEffect(() => {
@@ -446,7 +616,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       {/* Background Product Mockup Card */}
       <div
         id="product-mockup-stage"
-        className="relative transition-transform duration-100 ease-out origin-center flex items-center justify-center pointer-events-auto"
+        className="relative transition-transform duration-100 ease-out origin-center flex items-center justify-center pointer-events-auto rounded-3xl shadow-xl overflow-hidden bg-white border border-[#e2e8f0]"
         style={{
           width: `${STAGE_WIDTH}px`,
           height: `${STAGE_HEIGHT}px`,
@@ -454,37 +624,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
           cursor: isPanning ? 'grabbing' : zoom > 1 ? 'grab' : 'default',
         }}
       >
-        {/* Garment / Product Image */}
-        <div className="absolute inset-0 flex items-center justify-center p-4">
-          <img
-            src={product?.image || 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=800&q=80'}
-            alt={product?.name || 'Product Mockup'}
-            className="w-full h-full object-contain pointer-events-none drop-shadow-md select-none transition-all duration-300"
-            style={{
-              filter:
-                selectedColor.hex.toLowerCase() === '#ffffff'
-                  ? 'none'
-                  : `drop-shadow(0 4px 12px rgba(0,0,0,0.1))`,
-            }}
-          />
-
-          {/* Color Tint Blend Overlay */}
-          {selectedColor.hex.toLowerCase() !== '#ffffff' && (
-            <div
-              className="absolute inset-0 pointer-events-none mix-blend-multiply opacity-35 rounded-2xl"
-              style={{ backgroundColor: selectedColor.hex }}
-            />
-          )}
-
-          {/* Back side indicator watermark */}
-          {activeSide === 'back' && (
-            <span className="absolute top-6 right-6 px-2 py-0.5 rounded text-[10px] font-bold bg-black/40 text-white tracking-widest uppercase">
-              Back View
-            </span>
-          )}
-        </div>
-
-        {/* Konva Canvas Container */}
+        {/* Konva Canvas Container hosting Base Layer, Design Layer, and Guide Layer */}
         <div
           ref={containerRef}
           className="absolute inset-0 z-10"

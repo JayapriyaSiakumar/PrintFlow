@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import Category from '../models/Category';
-import Subcategory from '../models/Subcategory';
 import Product from '../models/Product';
 import memoryStore from '../utils/memoryStore';
 import { AuthenticatedRequest } from '../middleware/authMiddleware';
@@ -51,14 +50,10 @@ export const getCategories = async (req: Request, res: Response) => {
       // Calculate product counts for each category
       const categoriesWithCounts = await Promise.all(
         categories.map(async (cat) => {
-          const productCount = await Product.countDocuments({
-            $or: [{ category: cat._id }, { category: cat.id }, { category: cat.name }],
-          });
-          const subcategoryCount = await Subcategory.countDocuments({ category: cat._id });
+          const productCount = await Product.countDocuments({ category: cat._id });
           return {
             ...cat.toJSON(),
             productCount,
-            subcategoryCount,
           };
         })
       );
@@ -98,13 +93,9 @@ export const getCategories = async (req: Request, res: Response) => {
           p.category === cat.name ||
           (typeof p.category === 'object' && ((p.category as any).id === cat.id || (p.category as any).name === cat.name))
       ).length;
-      const subcategoryCount = memoryStore.subcategories.filter(
-        (s) => s.category === cat.id || (typeof s.category === 'object' && (s.category as any).id === cat.id)
-      ).length;
       return {
         ...cat,
         productCount,
-        subcategoryCount,
       };
     });
 
@@ -140,17 +131,13 @@ export const getCategoryById = async (req: Request, res: Response) => {
         return res.status(404).json({ success: false, error: 'Category not found.' });
       }
 
-      const productCount = await Product.countDocuments({
-        $or: [{ category: category._id }, { category: category.name }],
-      });
-      const subcategories = await Subcategory.find({ category: category._id, status: true });
+      const productCount = await Product.countDocuments({ category: category._id });
 
       return res.json({
         success: true,
         category: {
           ...category.toJSON(),
           productCount,
-          subcategories,
         },
       });
     }
@@ -170,16 +157,11 @@ export const getCategoryById = async (req: Request, res: Response) => {
         (typeof p.category === 'object' && ((p.category as any).id === category.id || (p.category as any).name === category.name))
     ).length;
 
-    const subcategories = memoryStore.subcategories.filter(
-      (s) => (s.category === category.id || (typeof s.category === 'object' && (s.category as any).id === category.id)) && s.status
-    );
-
     res.json({
       success: true,
       category: {
         ...category,
         productCount,
-        subcategories,
       },
     });
   } catch (error: any) {
@@ -194,7 +176,7 @@ export const getCategoryById = async (req: Request, res: Response) => {
  */
 export const createCategory = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { name, description = '', image = '', slug, status = true } = req.body;
+    const { name, description = '', image = '', imagePublicId = '', slug, status = true } = req.body;
 
     if (!name || typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ success: false, error: 'Category name is required.' });
@@ -226,6 +208,7 @@ export const createCategory = async (req: AuthenticatedRequest, res: Response) =
         slug: finalSlug,
         description: description.trim(),
         image: image.trim(),
+        imagePublicId: imagePublicId ? imagePublicId.trim() : '',
         status: Boolean(status),
       });
 
@@ -253,6 +236,7 @@ export const createCategory = async (req: AuthenticatedRequest, res: Response) =
       slug: finalSlug,
       description: description.trim(),
       image: image.trim(),
+      imagePublicId: imagePublicId ? imagePublicId.trim() : '',
       status: Boolean(status),
       createdAt: new Date().toISOString(),
     };
@@ -277,7 +261,7 @@ export const createCategory = async (req: AuthenticatedRequest, res: Response) =
 export const updateCategory = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, description, image, slug, status } = req.body;
+    const { name, description, image, imagePublicId, slug, status } = req.body;
 
     if (mongoose.connection.readyState === 1) {
       let category = null;
@@ -325,6 +309,7 @@ export const updateCategory = async (req: AuthenticatedRequest, res: Response) =
 
       if (description !== undefined) category.description = description.trim();
       if (image !== undefined) category.image = image.trim();
+      if (imagePublicId !== undefined) category.imagePublicId = imagePublicId.trim();
       if (status !== undefined) category.status = Boolean(status);
 
       await category.save();
@@ -374,6 +359,7 @@ export const updateCategory = async (req: AuthenticatedRequest, res: Response) =
 
     if (description !== undefined) c.description = description.trim();
     if (image !== undefined) c.image = image.trim();
+    if (imagePublicId !== undefined) c.imagePublicId = imagePublicId.trim();
     if (status !== undefined) c.status = Boolean(status);
 
     res.json({
@@ -387,7 +373,7 @@ export const updateCategory = async (req: AuthenticatedRequest, res: Response) =
 };
 
 /**
- * @desc    Delete category (guarded by product & subcategory usage)
+ * @desc    Delete category (guarded by product usage)
  * @route   DELETE /api/categories/:id
  * @access  Private / Admin
  */
@@ -409,25 +395,13 @@ export const deleteCategory = async (req: AuthenticatedRequest, res: Response) =
       }
 
       // Check product usage
-      const productCount = await Product.countDocuments({
-        $or: [{ category: category._id }, { category: category.id }, { category: category.name }],
-      });
+      const productCount = await Product.countDocuments({ category: category._id });
 
       if (productCount > 0) {
         return res.status(400).json({
           success: false,
           error: `Cannot delete category: "${category.name}" is currently being used by ${productCount} existing product(s). Please reassign or delete these products before deleting this category.`,
           productCount,
-        });
-      }
-
-      // Check subcategory usage
-      const subcategoryCount = await Subcategory.countDocuments({ category: category._id });
-      if (subcategoryCount > 0) {
-        return res.status(400).json({
-          success: false,
-          error: `Cannot delete category: "${category.name}" contains ${subcategoryCount} subcategory/subcategories. Please delete or reassign them first.`,
-          subcategoryCount,
         });
       }
 
@@ -459,18 +433,6 @@ export const deleteCategory = async (req: AuthenticatedRequest, res: Response) =
         success: false,
         error: `Cannot delete category: "${cat.name}" is currently being used by ${productsUsing.length} existing product(s). Please reassign or delete these products first.`,
         productCount: productsUsing.length,
-      });
-    }
-
-    const subcategoriesUsing = memoryStore.subcategories.filter(
-      (s) => s.category === cat.id || (typeof s.category === 'object' && (s.category as any).id === cat.id)
-    );
-
-    if (subcategoriesUsing.length > 0) {
-      return res.status(400).json({
-        success: false,
-        error: `Cannot delete category: "${cat.name}" contains ${subcategoriesUsing.length} subcategory/subcategories. Please delete or reassign them first.`,
-        subcategoryCount: subcategoriesUsing.length,
       });
     }
 

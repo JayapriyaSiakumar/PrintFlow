@@ -3,8 +3,8 @@ import { useApp } from '../context/AppContext';
 import { api } from '../services/api';
 import { User, Product, Order, CustomDesign, AdminDashboardStats, Category } from '../types';
 import { CategoryManagement } from './admin/CategoryManagement';
-import { SubcategoryManagement } from './admin/SubcategoryManagement';
 import { OrderDesignViewerModal } from './admin/OrderDesignViewerModal';
+import { CloudinaryImageUploader } from './admin/CloudinaryImageUploader';
 import {
   Shield,
   Users,
@@ -29,7 +29,6 @@ import {
   Filter,
   Check,
   Layers,
-  FolderTree
 } from 'lucide-react';
 
 export const AdminDashboard: React.FC = () => {
@@ -39,21 +38,16 @@ export const AdminDashboard: React.FC = () => {
     openAuthModal,
     setActiveView,
     categories,
-    subcategories,
     refreshCategories,
-    refreshSubcategories,
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'users' | 'products' | 'categories' | 'subcategories' | 'orders' | 'designs' | 'broadcast'
+    'overview' | 'users' | 'products' | 'categories' | 'orders' | 'designs' | 'broadcast'
   >('overview');
   const [stats, setStats] = useState<AdminDashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-
-  // Subcategory filter deep-link from Category tab
-  const [subcategoryFilterCategory, setSubcategoryFilterCategory] = useState<string | null>(null);
 
   // Users State
   const [users, setUsers] = useState<User[]>([]);
@@ -68,12 +62,14 @@ export const AdminDashboard: React.FC = () => {
   const [productForm, setProductForm] = useState({
     name: '',
     category: 'Apparel',
-    subcategory: '',
     price: 29.99,
     stock: 50,
     spec: 'Standard Fit',
     description: '',
     image: 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=800&q=80',
+    imagePublicId: '',
+    backMockupImage: '',
+    backMockupPublicId: '',
   });
 
   // Orders State
@@ -114,14 +110,14 @@ export const AdminDashboard: React.FC = () => {
       if (ordersRes.status === 'fulfilled') setOrders(ordersRes.value.orders);
       if (designsRes.status === 'fulfilled') setDesigns(designsRes.value.designs);
 
-      await Promise.allSettled([refreshCategories(), refreshSubcategories()]);
+      await refreshCategories();
     } catch (err: any) {
       showFeedback('error', err.message || 'Failed to load admin data');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [isAdmin, refreshCategories, refreshSubcategories]);
+  }, [isAdmin, refreshCategories]);
 
   useEffect(() => {
     loadAllData();
@@ -210,50 +206,33 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  // Available subcategories for current product category selection in modal
-  const modalAvailableSubcategories = useMemo(() => {
-    const selectedCat = categories.find(
-      (c) => c.name === productForm.category || (c.id || c._id) === productForm.category
-    );
-    if (!selectedCat) return [];
-    const catId = selectedCat.id || selectedCat._id;
-    return subcategories.filter((s) => {
-      const parentId = typeof s.category === 'object' ? s.category.id || s.category._id : s.category;
-      return parentId === catId || parentId === selectedCat.name;
-    });
-  }, [categories, subcategories, productForm.category]);
-
   const handleProductCategoryChange = (newCatName: string) => {
-    const selectedCat = categories.find(
-      (c) => c.name === newCatName || (c.id || c._id) === newCatName
-    );
-    let subToSelect = '';
-    if (selectedCat) {
-      const catId = selectedCat.id || selectedCat._id;
-      const available = subcategories.filter((s) => {
-        const parentId = typeof s.category === 'object' ? s.category.id || s.category._id : s.category;
-        return parentId === catId || parentId === selectedCat.name;
-      });
-      if (available.length > 0) {
-        subToSelect = available[0].name;
-      }
-    }
     setProductForm((prev) => ({
       ...prev,
       category: newCatName,
-      subcategory: subToSelect,
     }));
   };
 
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const payload: any = {
+        ...productForm,
+        imagePublicId: productForm.imagePublicId,
+        mockupImages: [
+          { side: 'front', url: productForm.image, publicId: productForm.imagePublicId },
+          ...(productForm.backMockupImage
+            ? [{ side: 'back', url: productForm.backMockupImage, publicId: productForm.backMockupPublicId }]
+            : []),
+        ],
+      };
+
       if (editingProduct) {
-        const res = await api.updateAdminProduct(editingProduct.id, productForm);
+        const res = await api.updateAdminProduct(editingProduct.id, payload);
         setAdminProducts((prev) => prev.map((p) => (p.id === editingProduct.id ? res.product : p)));
         showFeedback('success', `Product "${res.product.name}" updated`);
       } else {
-        const res = await api.createAdminProduct(productForm);
+        const res = await api.createAdminProduct(payload);
         setAdminProducts((prev) => [res.product, ...prev]);
         showFeedback('success', `Product "${res.product.name}" created`);
       }
@@ -261,7 +240,6 @@ export const AdminDashboard: React.FC = () => {
       setEditingProduct(null);
       loadAllData();
       await refreshCategories();
-      await refreshSubcategories();
     } catch (err: any) {
       showFeedback('error', err.message || 'Failed to save product');
     }
@@ -270,30 +248,18 @@ export const AdminDashboard: React.FC = () => {
   const openNewProductModal = () => {
     setEditingProduct(null);
     const defaultCat = categories.length > 0 ? categories[0].name : 'Apparel';
-    const selectedCat = categories.find(
-      (c) => c.name === defaultCat || (c.id || c._id) === defaultCat
-    );
-    let defaultSub = '';
-    if (selectedCat) {
-      const catId = selectedCat.id || selectedCat._id;
-      const available = subcategories.filter((s) => {
-        const parentId = typeof s.category === 'object' ? s.category.id || s.category._id : s.category;
-        return parentId === catId || parentId === selectedCat.name;
-      });
-      if (available.length > 0) {
-        defaultSub = available[0].name;
-      }
-    }
 
     setProductForm({
       name: '',
       category: defaultCat,
-      subcategory: defaultSub,
       price: 29.99,
       stock: 50,
       spec: 'Premium Ring-Spun Cotton',
       description: 'High-grade customizable apparel crafted for durability and vibrant prints.',
       image: 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=800&q=80',
+      imagePublicId: '',
+      backMockupImage: '',
+      backMockupPublicId: '',
     });
     setIsProductModalOpen(true);
   };
@@ -304,20 +270,21 @@ export const AdminDashboard: React.FC = () => {
       typeof product.category === 'object'
         ? product.category.name
         : product.categoryName || product.category;
-    const subVal =
-      typeof product.subcategory === 'object'
-        ? product.subcategory.name
-        : product.subcategoryName || (product.subcategory as string) || '';
+
+    const frontMockup = product.mockupImages?.find((m) => m.side === 'front');
+    const backMockup = product.mockupImages?.find((m) => m.side === 'back');
 
     setProductForm({
       name: product.name,
       category: catVal,
-      subcategory: subVal,
       price: product.price,
       stock: product.stock,
       spec: product.spec,
       description: product.description,
       image: product.image,
+      imagePublicId: product.imagePublicId || frontMockup?.publicId || '',
+      backMockupImage: backMockup?.url || '',
+      backMockupPublicId: backMockup?.publicId || '',
     });
     setIsProductModalOpen(true);
   };
@@ -400,11 +367,9 @@ export const AdminDashboard: React.FC = () => {
   const filteredProducts = adminProducts.filter((p) => {
     const term = productSearch.toLowerCase();
     const catName = typeof p.category === 'object' ? p.category.name : (p.categoryName || p.category || '');
-    const subName = typeof p.subcategory === 'object' ? p.subcategory.name : (p.subcategoryName || (p.subcategory as string) || '');
     return (
       p.name.toLowerCase().includes(term) ||
-      catName.toLowerCase().includes(term) ||
-      subName.toLowerCase().includes(term)
+      catName.toLowerCase().includes(term)
     );
   });
 
@@ -533,19 +498,6 @@ export const AdminDashboard: React.FC = () => {
           </span>
         </div>
 
-        <div className="bg-white p-4 rounded-xl border border-[#e2e2e2] shadow-xs">
-          <div className="flex items-center justify-between text-[#727785] mb-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Subcategories</span>
-            <FolderTree className="w-4 h-4 text-teal-600" />
-          </div>
-          <div className="text-xl font-bold font-['Montserrat'] text-[#1a1c1c]">
-            {subcategories.length}
-          </div>
-          <span className="text-[10px] text-teal-700 font-semibold block mt-0.5">
-            {subcategories.filter((s) => s.status !== false).length} Active
-          </span>
-        </div>
-
         <div className="bg-white p-4 rounded-xl border border-[#e2e2e2] shadow-xs col-span-2 sm:col-span-1">
           <div className="flex items-center justify-between text-[#727785] mb-1">
             <span className="text-[11px] font-bold uppercase tracking-wider">Designs</span>
@@ -610,22 +562,6 @@ export const AdminDashboard: React.FC = () => {
         >
           <Layers className="w-3.5 h-3.5" />
           <span>Categories ({categories.length})</span>
-        </button>
-
-        <button
-          onClick={() => {
-            setSubcategoryFilterCategory('all');
-            setActiveTab('subcategories');
-          }}
-          id="tab-admin-subcategories"
-          className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors ${
-            activeTab === 'subcategories'
-              ? 'bg-[#6b38d4] text-white shadow-xs'
-              : 'text-[#555f6f] hover:bg-[#f3f3f4] hover:text-[#1a1c1c]'
-          }`}
-        >
-          <FolderTree className="w-3.5 h-3.5" />
-          <span>Subcategories ({subcategories.length})</span>
         </button>
 
         <button
@@ -730,18 +666,6 @@ export const AdminDashboard: React.FC = () => {
                 >
                   <span className="flex items-center gap-2">
                     <Layers className="w-4 h-4" /> Manage Categories ({categories.length})
-                  </span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => {
-                    setSubcategoryFilterCategory('all');
-                    setActiveTab('subcategories');
-                  }}
-                  className="w-full py-2.5 px-3 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-700 font-semibold text-xs flex items-center justify-between transition-colors"
-                >
-                  <span className="flex items-center gap-2">
-                    <FolderTree className="w-4 h-4" /> Manage Subcategories ({subcategories.length})
                   </span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
@@ -950,14 +874,6 @@ export const AdminDashboard: React.FC = () => {
                       <span className="text-[10px] font-bold text-[#0058be] uppercase tracking-wider">
                         {typeof prod.category === 'object' ? prod.category.name : (prod.categoryName || prod.category)}
                       </span>
-                      {(prod.subcategory || prod.subcategoryName) && (
-                        <>
-                          <span className="text-[10px] text-[#727785]">•</span>
-                          <span className="text-[10px] font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded">
-                            {typeof prod.subcategory === 'object' ? prod.subcategory.name : (prod.subcategoryName || prod.subcategory)}
-                          </span>
-                        </>
-                      )}
                     </div>
                     <h4 className="font-bold text-sm text-[#1a1c1c] truncate mt-0.5">{prod.name}</h4>
                     <p className="text-xs font-bold text-[#1a1c1c] mt-1">${prod.price.toFixed(2)}</p>
@@ -1005,19 +921,7 @@ export const AdminDashboard: React.FC = () => {
 
       {/* ================= TAB: CATEGORIES MANAGEMENT ================= */}
       {activeTab === 'categories' && (
-        <CategoryManagement
-          onNavigateSubcategories={(catId) => {
-            setSubcategoryFilterCategory(catId);
-            setActiveTab('subcategories');
-          }}
-        />
-      )}
-
-      {/* ================= TAB: SUBCATEGORIES MANAGEMENT ================= */}
-      {activeTab === 'subcategories' && (
-        <SubcategoryManagement
-          initialCategoryFilter={subcategoryFilterCategory || 'all'}
-        />
+        <CategoryManagement />
       )}
 
       {/* ================= TAB 4: ORDERS ROUTING ================= */}
@@ -1285,45 +1189,28 @@ export const AdminDashboard: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-bold text-[#1a1c1c] block mb-1">Category</label>
-                  <select
-                    value={productForm.category}
-                    onChange={(e) => handleProductCategoryChange(e.target.value)}
-                    className="w-full px-3 py-2 bg-[#f9f9f9] border border-[#e2e2e2] rounded-xl text-xs font-medium text-[#1a1c1c]"
-                  >
-                    {categories.length > 0 ? (
-                      categories.map((cat) => (
-                        <option key={cat.id || cat._id} value={cat.name}>
-                          {cat.name}
-                        </option>
-                      ))
-                    ) : (
-                      <>
-                        <option value="Apparel">Apparel</option>
-                        <option value="Home Decor">Home Decor</option>
-                        <option value="Accessories">Accessories</option>
-                        <option value="Stationery">Stationery</option>
-                      </>
-                    )}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-[#1a1c1c] block mb-1">Subcategory</label>
-                  <select
-                    value={productForm.subcategory}
-                    onChange={(e) => setProductForm({ ...productForm, subcategory: e.target.value })}
-                    className="w-full px-3 py-2 bg-[#f9f9f9] border border-[#e2e2e2] rounded-xl text-xs font-medium text-[#1a1c1c]"
-                  >
-                    <option value="">None / General</option>
-                    {modalAvailableSubcategories.map((sub) => (
-                      <option key={sub.id || sub._id} value={sub.name}>
-                        {sub.name}
+              <div>
+                <label className="text-xs font-bold text-[#1a1c1c] block mb-1">Category</label>
+                <select
+                  value={productForm.category}
+                  onChange={(e) => handleProductCategoryChange(e.target.value)}
+                  className="w-full px-3 py-2 bg-[#f9f9f9] border border-[#e2e2e2] rounded-xl text-xs font-medium text-[#1a1c1c]"
+                >
+                  {categories.length > 0 ? (
+                    categories.map((cat) => (
+                      <option key={cat.id || cat._id} value={cat.name}>
+                        {cat.name}
                       </option>
-                    ))}
-                  </select>
-                </div>
+                    ))
+                  ) : (
+                    <>
+                      <option value="Apparel">Apparel</option>
+                      <option value="Home Decor">Home Decor</option>
+                      <option value="Accessories">Accessories</option>
+                      <option value="Stationery">Stationery</option>
+                    </>
+                  )}
+                </select>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -1360,16 +1247,28 @@ export const AdminDashboard: React.FC = () => {
                 />
               </div>
 
-              <div>
-                <label className="text-xs font-bold text-[#1a1c1c] block mb-1">Image URL</label>
-                <input
-                  type="url"
-                  required
-                  value={productForm.image}
-                  onChange={(e) => setProductForm({ ...productForm, image: e.target.value })}
-                  className="w-full px-3 py-2 bg-[#f9f9f9] border border-[#e2e2e2] rounded-xl text-xs"
-                />
-              </div>
+              <CloudinaryImageUploader
+                label="Product Base Image (Front Mockup)"
+                value={productForm.image}
+                publicId={productForm.imagePublicId}
+                onChange={(url, publicId) =>
+                  setProductForm({ ...productForm, image: url, imagePublicId: publicId || '' })
+                }
+                uploadEndpoint="/api/upload/product"
+                helperText="Primary front mockup image (Layer 1 base in designer)"
+                required
+              />
+
+              <CloudinaryImageUploader
+                label="Back Mockup Image (Optional)"
+                value={productForm.backMockupImage}
+                publicId={productForm.backMockupPublicId}
+                onChange={(url, publicId) =>
+                  setProductForm({ ...productForm, backMockupImage: url, backMockupPublicId: publicId || '' })
+                }
+                uploadEndpoint="/api/upload/mockup"
+                helperText="Back angle mockup image (Layer 1 base when customizing back)"
+              />
 
               <div>
                 <label className="text-xs font-bold text-[#1a1c1c] block mb-1">Description</label>

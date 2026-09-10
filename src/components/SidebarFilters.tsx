@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Size, CategoryItem } from '../types';
 import { AVAILABLE_COLORS } from '../data/initialData';
-import { Check, RotateCcw, ChevronRight, Layers } from 'lucide-react';
+import { Check, RotateCcw, Layers } from 'lucide-react';
 
 const DEFAULT_CATEGORIES: { name: string; slug: string }[] = [
   { name: 'Apparel', slug: 'apparel' },
@@ -16,9 +16,7 @@ export const SidebarFilters: React.FC = () => {
   const {
     filters,
     categories,
-    subcategories,
     setCategory,
-    setSubcategory,
     toggleSizeFilter,
     toggleColorFilter,
     setPriceRange,
@@ -41,7 +39,6 @@ export const SidebarFilters: React.FC = () => {
 
   const hasActiveFilters =
     (filters.category && filters.category !== 'All') ||
-    filters.subcategory ||
     filters.sizes.length > 0 ||
     filters.colors.length > 0 ||
     filters.minPrice !== '' ||
@@ -77,7 +74,6 @@ export const SidebarFilters: React.FC = () => {
           <label
             onClick={() => {
               setCategory('All');
-              setSubcategory(undefined);
             }}
             className="flex items-center gap-3 py-1 px-1.5 rounded-lg hover:bg-[#e8e8e8]/60 cursor-pointer group transition-colors"
           >
@@ -103,24 +99,12 @@ export const SidebarFilters: React.FC = () => {
               filters.category?.toLowerCase() === cat.slug.toLowerCase() ||
               filters.category === cat.id;
 
-            // Find child subcategories for this category
-            const childSubcategories = (subcategories || []).filter((sub) => {
-              if (sub.status === false) return false;
-              const subCatId = typeof sub.category === 'object' ? sub.category.id || sub.category._id : sub.category;
-              const catId = cat.id || cat._id;
-              const catName = cat.name.toLowerCase();
-              const catSlug = cat.slug.toLowerCase();
-              return subCatId === catId || subCatId === catName || subCatId === catSlug;
-            });
-
             return (
               <div key={cat.id || cat.slug} className="flex flex-col">
                 <div
                   onClick={() => {
                     if (isSelected) {
-                      // Clicking selected category toggles to All
                       setCategory('All');
-                      setSubcategory(undefined);
                     } else {
                       setCategory(cat.name);
                     }
@@ -145,60 +129,7 @@ export const SidebarFilters: React.FC = () => {
                       {cat.name}
                     </span>
                   </div>
-
-                  {childSubcategories.length > 0 && (
-                    <span className="text-[11px] font-medium text-[#727785] bg-white/70 px-1.5 py-0.5 rounded-md border border-[#e2e2e2]">
-                      {childSubcategories.length}
-                    </span>
-                  )}
                 </div>
-
-                {/* Subcategories (visible when category is selected) */}
-                {isSelected && childSubcategories.length > 0 && (
-                  <div className="ml-5 pl-2.5 my-1.5 border-l-2 border-[#0058be]/25 flex flex-col gap-1">
-                    {/* All in Category */}
-                    <button
-                      type="button"
-                      onClick={() => setSubcategory(undefined)}
-                      className={`text-left text-xs py-1 px-2 rounded flex items-center justify-between transition-colors ${
-                        !filters.subcategory || filters.subcategory === 'All'
-                          ? 'font-bold text-[#0058be] bg-[#0058be]/10'
-                          : 'text-[#585e6e] hover:text-[#0058be] hover:bg-[#f0f0f2]'
-                      }`}
-                    >
-                      <span>All {cat.name}</span>
-                      {(!filters.subcategory || filters.subcategory === 'All') && (
-                        <Check className="w-3 h-3 text-[#0058be]" />
-                      )}
-                    </button>
-
-                    {childSubcategories.map((sub) => {
-                      const isSubSelected =
-                        filters.subcategory?.toLowerCase() === sub.name.toLowerCase() ||
-                        filters.subcategory?.toLowerCase() === sub.slug.toLowerCase() ||
-                        filters.subcategory === sub.id;
-
-                      return (
-                        <button
-                          key={sub.id || sub.slug}
-                          type="button"
-                          onClick={() => setSubcategory(isSubSelected ? undefined : sub.name)}
-                          className={`text-left text-xs py-1 px-2 rounded flex items-center justify-between transition-colors ${
-                            isSubSelected
-                              ? 'font-bold text-[#0058be] bg-[#0058be]/10'
-                              : 'text-[#585e6e] hover:text-[#0058be] hover:bg-[#f0f0f2]'
-                          }`}
-                        >
-                          <div className="flex items-center gap-1.5">
-                            <ChevronRight className={`w-3 h-3 ${isSubSelected ? 'text-[#0058be]' : 'text-[#a1a5b0]'}`} />
-                            <span>{sub.name}</span>
-                          </div>
-                          {isSubSelected && <Check className="w-3 h-3 text-[#0058be]" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
               </div>
             );
           })}

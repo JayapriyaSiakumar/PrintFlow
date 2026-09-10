@@ -29,7 +29,11 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
 
   if (!isOpen) return null;
 
-  const currentPreviewUrl = activeSide === 'front' ? previewFrontUrl : previewBackUrl || previewFrontUrl;
+  const sideMockup = product?.mockupImages?.find((m) => m.side === activeSide)?.url;
+  const currentPreviewUrl =
+    activeSide === 'front'
+      ? previewFrontUrl || sideMockup || product?.image || ''
+      : previewBackUrl || sideMockup || previewFrontUrl || product?.image || '';
 
   const handleDownloadSnapshot = () => {
     if (!currentPreviewUrl) return;

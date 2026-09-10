@@ -13,10 +13,14 @@ export interface ICustomDesign extends Document {
   designTextColor?: string;
   designFont?: string;
   graphicUrl?: string;
+  graphicPublicId?: string;
   placement: 'front' | 'back' | 'chest' | 'sleeve';
   previewDataUrl?: string;
+  previewDataUrlPublicId?: string;
   previewFrontUrl?: string;
+  previewFrontPublicId?: string;
   previewBackUrl?: string;
+  previewBackPublicId?: string;
   sides?: any;
   designConfig?: any;
   createdAt: Date;
@@ -74,6 +78,10 @@ const customDesignSchema = new Schema<ICustomDesign>(
       type: String,
       default: '',
     },
+    graphicPublicId: {
+      type: String,
+      default: '',
+    },
     placement: {
       type: String,
       enum: ['front', 'back', 'chest', 'sleeve'],
@@ -83,11 +91,23 @@ const customDesignSchema = new Schema<ICustomDesign>(
       type: String,
       default: '',
     },
+    previewDataUrlPublicId: {
+      type: String,
+      default: '',
+    },
     previewFrontUrl: {
       type: String,
       default: '',
     },
+    previewFrontPublicId: {
+      type: String,
+      default: '',
+    },
     previewBackUrl: {
+      type: String,
+      default: '',
+    },
+    previewBackPublicId: {
       type: String,
       default: '',
     },

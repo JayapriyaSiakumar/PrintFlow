@@ -9,7 +9,6 @@ import { Product, Order, User, CustomDesign, LiveNotification } from '../../src/
 class MemoryStore {
   products: Product[] = [];
   categories: any[] = [];
-  subcategories: any[] = [];
   users: (User & { passwordHash: string })[] = [];
   orders: Order[] = [];
   designs: CustomDesign[] = [];
@@ -64,127 +63,30 @@ class MemoryStore {
       },
     ];
 
-    // Initial Subcategories
-    this.subcategories = [
-      {
-        id: 'subcat-t-shirts',
-        name: 'T-Shirts',
-        slug: 't-shirts',
-        category: 'cat-apparel',
-        description: 'Classic crewnecks, relaxed fits, heavyweight cotton blanks.',
-        image: 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=800&q=80',
-        status: true,
-        createdAt: '2024-01-01T00:00:00.000Z',
-      },
-      {
-        id: 'subcat-hoodies',
-        name: 'Hoodies & Fleece',
-        slug: 'hoodies-fleece',
-        category: 'cat-apparel',
-        description: 'Plush fleece pullovers, zip hoodies, heavyweight streetwear.',
-        image: 'https://images.unsplash.com/photo-1556905055-8f358a7a47b2?auto=format&fit=crop&w=800&q=80',
-        status: true,
-        createdAt: '2024-01-01T00:00:00.000Z',
-      },
-      {
-        id: 'subcat-polos-tops',
-        name: 'Polos & Active Tops',
-        slug: 'polos-active-tops',
-        category: 'cat-apparel',
-        description: 'Performance pique, moisture-wicking collars, activewear.',
-        image: 'https://images.unsplash.com/photo-1581655353564-df123a1eb820?auto=format&fit=crop&w=800&q=80',
-        status: true,
-        createdAt: '2024-01-01T00:00:00.000Z',
-      },
-      {
-        id: 'subcat-canvas-wall-art',
-        name: 'Canvas & Wall Art',
-        slug: 'canvas-wall-art',
-        category: 'cat-home-decor',
-        description: 'Archival gallery wrapped timber frame canvas prints.',
-        image: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=800&q=80',
-        status: true,
-        createdAt: '2024-01-01T00:00:00.000Z',
-      },
-      {
-        id: 'subcat-drinkware-mugs',
-        name: 'Drinkware & Mugs',
-        slug: 'drinkware-mugs',
-        category: 'cat-home-decor',
-        description: 'Gloss ceramic sublimation mugs and insulated drinkware.',
-        image: 'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?auto=format&fit=crop&w=800&q=80',
-        status: true,
-        createdAt: '2024-01-01T00:00:00.000Z',
-      },
-      {
-        id: 'subcat-totes-bags',
-        name: 'Bags & Totes',
-        slug: 'bags-totes',
-        category: 'cat-accessories',
-        description: 'Heavy bull denim canvas everyday tote bags.',
-        image: 'https://images.unsplash.com/photo-1544816155-12df9643f363?auto=format&fit=crop&w=800&q=80',
-        status: true,
-        createdAt: '2024-01-01T00:00:00.000Z',
-      },
-      {
-        id: 'subcat-hats-headwear',
-        name: 'Hats & Headwear',
-        slug: 'hats-headwear',
-        category: 'cat-accessories',
-        description: 'Unstructured chino dad hats, baseball caps, and beanies.',
-        image: 'https://images.unsplash.com/photo-1588850561407-ed78c282e89b?auto=format&fit=crop&w=800&q=80',
-        status: true,
-        createdAt: '2024-01-01T00:00:00.000Z',
-      },
-      {
-        id: 'subcat-journals-notebooks',
-        name: 'Notebooks & Journals',
-        slug: 'notebooks-journals',
-        category: 'cat-stationery',
-        description: 'Casebound matte hardcover journals with acid-free ruled paper.',
-        image: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=800&q=80',
-        status: true,
-        createdAt: '2024-01-01T00:00:00.000Z',
-      },
-      {
-        id: 'subcat-stickers-decals',
-        name: 'Stickers & Decals',
-        slug: 'stickers-decals',
-        category: 'cat-stationery',
-        description: 'Contour die-cut UV-laminated waterproof vinyl sticker packs.',
-        image: 'https://images.unsplash.com/photo-1572375992501-4b0892d50c69?auto=format&fit=crop&w=800&q=80',
-        status: true,
-        createdAt: '2024-01-01T00:00:00.000Z',
-      },
-    ];
-
-    // Map initial products with category and subcategory links
-    const subcatMap: Record<string, { catId: string; subId: string; subName: string }> = {
-      'prod-1': { catId: 'cat-apparel', subId: 'subcat-t-shirts', subName: 'T-Shirts' },
-      'prod-2': { catId: 'cat-apparel', subId: 'subcat-hoodies', subName: 'Hoodies & Fleece' },
-      'prod-3': { catId: 'cat-apparel', subId: 'subcat-t-shirts', subName: 'T-Shirts' },
-      'prod-4': { catId: 'cat-apparel', subId: 'subcat-polos-tops', subName: 'Polos & Active Tops' },
-      'prod-5': { catId: 'cat-apparel', subId: 'subcat-hoodies', subName: 'Hoodies & Fleece' },
-      'prod-6': { catId: 'cat-apparel', subId: 'subcat-t-shirts', subName: 'T-Shirts' },
-      'prod-7': { catId: 'cat-home-decor', subId: 'subcat-canvas-wall-art', subName: 'Canvas & Wall Art' },
-      'prod-8': { catId: 'cat-home-decor', subId: 'subcat-drinkware-mugs', subName: 'Drinkware & Mugs' },
-      'prod-9': { catId: 'cat-accessories', subId: 'subcat-totes-bags', subName: 'Bags & Totes' },
-      'prod-10': { catId: 'cat-accessories', subId: 'subcat-hats-headwear', subName: 'Hats & Headwear' },
-      'prod-11': { catId: 'cat-stationery', subId: 'subcat-journals-notebooks', subName: 'Notebooks & Journals' },
-      'prod-12': { catId: 'cat-stationery', subId: 'subcat-stickers-decals', subName: 'Stickers & Decals' },
+    // Map initial products with category links
+    const categoryMap: Record<string, string> = {
+      'prod-1': 'cat-apparel',
+      'prod-2': 'cat-apparel',
+      'prod-3': 'cat-apparel',
+      'prod-4': 'cat-apparel',
+      'prod-5': 'cat-apparel',
+      'prod-6': 'cat-apparel',
+      'prod-7': 'cat-home-decor',
+      'prod-8': 'cat-home-decor',
+      'prod-9': 'cat-accessories',
+      'prod-10': 'cat-accessories',
+      'prod-11': 'cat-stationery',
+      'prod-12': 'cat-stationery',
     };
 
     this.products = INITIAL_PRODUCTS.map((p) => {
-      const mapping = subcatMap[p.id];
-      const catObj = mapping ? this.categories.find((c) => c.id === mapping.catId) : null;
-      const subObj = mapping ? this.subcategories.find((s) => s.id === mapping.subId) : null;
+      const catId = categoryMap[p.id];
+      const catObj = catId ? this.categories.find((c) => c.id === catId) : null;
 
       return {
         ...p,
         category: catObj ? { id: catObj.id, name: catObj.name, slug: catObj.slug, status: catObj.status } : (p.category as any),
-        subcategory: subObj ? { id: subObj.id, name: subObj.name, slug: subObj.slug, status: subObj.status, category: subObj.category } : undefined,
         categoryName: catObj ? catObj.name : (typeof p.category === 'string' ? p.category : ''),
-        subcategoryName: subObj ? subObj.name : (mapping ? mapping.subName : ''),
       };
     });
     this.users = [

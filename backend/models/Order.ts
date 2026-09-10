@@ -15,7 +15,13 @@ export interface IOrderItem {
     fontFamily?: string;
     placement?: string;
     graphicUrl?: string;
+    graphicPublicId?: string;
     previewDataUrl?: string;
+    previewDataUrlPublicId?: string;
+    previewFrontUrl?: string;
+    previewFrontPublicId?: string;
+    previewBackUrl?: string;
+    previewBackPublicId?: string;
   };
 }
 

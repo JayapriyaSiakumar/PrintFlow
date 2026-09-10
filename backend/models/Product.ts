@@ -18,7 +18,6 @@ export interface IProduct extends Document {
   productId: string;
   name: string;
   category: mongoose.Types.ObjectId | any;
-  subcategory: mongoose.Types.ObjectId | any;
   price: number;
   stock: number;
   spec: string;
@@ -26,6 +25,8 @@ export interface IProduct extends Document {
   sizes: string[];
   colors: IProductColor[];
   image: string;
+  imagePublicId?: string;
+  mockupImages?: { side?: string; url: string; publicId?: string }[];
   tag?: string;
   rating: number;
   reviewsCount: number;
@@ -74,12 +75,6 @@ const productSchema = new Schema<IProduct>(
       required: [true, 'Please select a category'],
       index: true,
     },
-    subcategory: {
-      type: Schema.Types.ObjectId,
-      ref: 'Subcategory',
-      required: [true, 'Please select a subcategory'],
-      index: true,
-    },
     price: {
       type: Number,
       required: [true, 'Please specify price'],
@@ -113,6 +108,14 @@ const productSchema = new Schema<IProduct>(
       type: String,
       required: [true, 'Product image is required'],
     },
+    imagePublicId: {
+      type: String,
+      default: '',
+    },
+    mockupImages: {
+      type: [{ side: String, url: String, publicId: String }],
+      default: [],
+    },
     tag: {
       type: String,
       default: 'New',
@@ -141,12 +144,9 @@ const productSchema = new Schema<IProduct>(
     toJSON: {
       transform(_doc, ret: Record<string, any>) {
         ret.id = ret.productId || (ret._id ? ret._id.toString() : '');
-        // Provide categoryName and subcategoryName convenience fields
+        // Provide categoryName convenience field
         if (ret.category && typeof ret.category === 'object') {
           ret.categoryName = ret.category.name || '';
-        }
-        if (ret.subcategory && typeof ret.subcategory === 'object') {
-          ret.subcategoryName = ret.subcategory.name || '';
         }
         delete ret._id;
         delete ret.__v;
@@ -155,23 +155,6 @@ const productSchema = new Schema<IProduct>(
     },
   }
 );
-
-// Validate that subcategory belongs to category
-productSchema.pre('validate', async function (this: any) {
-  if (this.category && this.subcategory) {
-    const SubcategoryModel =
-      mongoose.models.Subcategory || mongoose.model('Subcategory');
-    const sub = await SubcategoryModel.findById(this.subcategory);
-    if (!sub) {
-      throw new Error('Selected subcategory does not exist.');
-    }
-    const parentCatId = sub.category ? sub.category.toString() : '';
-    const selectedCatId = this.category.toString();
-    if (parentCatId !== selectedCatId) {
-      throw new Error('Selected subcategory does not belong to the selected category.');
-    }
-  }
-});
 
 export const Product: Model<IProduct> =
   mongoose.models.Product || mongoose.model<IProduct>('Product', productSchema);

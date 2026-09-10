@@ -92,19 +92,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
           </span>
         </div>
 
-        {/* Category & Subcategory tags */}
+        {/* Category tag */}
         <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-[#727785]">
           <span className="font-semibold text-[#0058be]">
             {typeof product.category === 'object' ? product.category.name : (product.categoryName || product.category)}
           </span>
-          {(product.subcategory || product.subcategoryName) && (
-            <>
-              <span className="text-[#a1a5b0]">•</span>
-              <span className="text-[#555f6f]">
-                {typeof product.subcategory === 'object' ? product.subcategory.name : (product.subcategoryName || product.subcategory)}
-              </span>
-            </>
-          )}
         </div>
 
         <p className="font-['Inter'] text-xs text-[#555f6f]">

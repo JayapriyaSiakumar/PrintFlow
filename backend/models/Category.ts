@@ -5,6 +5,7 @@ export interface ICategory extends Document {
   slug: string;
   description: string;
   image: string;
+  imagePublicId?: string;
   status: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -38,6 +39,10 @@ const categorySchema = new Schema<ICategory>(
       type: String,
       default: '',
       trim: true,
+    },
+    imagePublicId: {
+      type: String,
+      default: '',
     },
     status: {
       type: Boolean,

@@ -2,7 +2,6 @@ import { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import Product from '../models/Product';
 import Category from '../models/Category';
-import Subcategory from '../models/Subcategory';
 import memoryStore from '../utils/memoryStore';
 
 /**
@@ -12,7 +11,7 @@ import memoryStore from '../utils/memoryStore';
  */
 export const getProducts = async (req: Request, res: Response) => {
   try {
-    const { category, subcategory, sizes, colors, minPrice, maxPrice, sort, search } = req.query;
+    const { category, sizes, colors, minPrice, maxPrice, sort, search } = req.query;
 
     if (mongoose.connection.readyState === 1) {
       const queryObj: any = {};
@@ -29,25 +28,8 @@ export const getProducts = async (req: Request, res: Response) => {
           if (catDoc) {
             queryObj.category = catDoc._id;
           } else {
-            // Also allow matching string category on legacy products
-            queryObj.$or = [{ category: catVal }];
-          }
-        }
-      }
-
-      if (subcategory && typeof subcategory === 'string' && subcategory !== 'All') {
-        const subVal = subcategory.trim();
-        if (mongoose.Types.ObjectId.isValid(subVal)) {
-          queryObj.subcategory = subVal;
-        } else {
-          // Look up Subcategory by slug or name
-          const subDoc = await Subcategory.findOne({
-            $or: [{ slug: subVal.toLowerCase() }, { name: new RegExp(`^${subVal}$`, 'i') }],
-          });
-          if (subDoc) {
-            queryObj.subcategory = subDoc._id;
-          } else {
-            queryObj.$or = [{ subcategory: subVal }];
+            // Category name/slug not found, set non-matching ObjectId
+            queryObj.category = new mongoose.Types.ObjectId();
           }
         }
       }
@@ -83,7 +65,6 @@ export const getProducts = async (req: Request, res: Response) => {
 
       const products = await Product.find(queryObj)
         .populate('category', 'name slug status')
-        .populate('subcategory', 'name slug status')
         .sort(sortObj);
 
       return res.json({
@@ -113,29 +94,6 @@ export const getProducts = async (req: Request, res: Response) => {
         return (
           (pCat as string).toLowerCase() === catVal ||
           (memCat && (memCat.id === catVal || memCat.slug === catVal || memCat.name.toLowerCase() === catVal))
-        );
-      });
-    }
-
-    if (subcategory && typeof subcategory === 'string' && subcategory !== 'All') {
-      const subVal = subcategory.trim().toLowerCase();
-      result = result.filter((p) => {
-        const pSub = p.subcategory;
-        if (!pSub) return false;
-        if (typeof pSub === 'object' && pSub !== null) {
-          const sObj = pSub as any;
-          return (
-            (sObj.id && sObj.id.toLowerCase() === subVal) ||
-            (sObj.slug && sObj.slug.toLowerCase() === subVal) ||
-            (sObj.name && sObj.name.toLowerCase() === subVal)
-          );
-        }
-        const memSub = memoryStore.subcategories.find(
-          (s) => s.id === pSub || s.slug === pSub || s.name.toLowerCase() === (pSub as string).toLowerCase()
-        );
-        return (
-          (pSub as string).toLowerCase() === subVal ||
-          (memSub && (memSub.id === subVal || memSub.slug === subVal || memSub.name.toLowerCase() === subVal))
         );
       });
     }

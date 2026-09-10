@@ -9,22 +9,7 @@ export interface CategoryItem {
   slug: string;
   description?: string;
   image?: string;
-  status: boolean;
-  productCount?: number;
-  subcategoriesCount?: number;
-  subcategories?: SubcategoryItem[];
-  createdAt?: string;
-  updatedAt?: string;
-}
-
-export interface SubcategoryItem {
-  id: string;
-  _id?: string;
-  name: string;
-  slug: string;
-  category: string | CategoryItem;
-  description?: string;
-  image?: string;
+  imagePublicId?: string;
   status: boolean;
   productCount?: number;
   createdAt?: string;
@@ -43,14 +28,14 @@ export interface Product {
   name: string;
   price: number;
   category: string | CategoryItem;
-  subcategory?: string | SubcategoryItem;
   categoryName?: string;
-  subcategoryName?: string;
   spec: string;
   description: string;
   sizes: Size[];
   colors: ProductColor[];
   image: string;
+  imagePublicId?: string;
+  mockupImages?: { side?: 'front' | 'back' | string; url: string; publicId?: string }[];
   tag?: 'Bestseller' | 'New' | 'Popular' | 'Eco' | string;
   rating: number;
   reviewsCount: number;
@@ -112,6 +97,7 @@ export interface DesignElement {
   
   // Image element specific
   src?: string;
+  publicId?: string;
   naturalWidth?: number;
   naturalHeight?: number;
   aspectRatio?: number;
@@ -121,6 +107,7 @@ export interface DesignElement {
 export interface SideDesignState {
   elements: DesignElement[];
   previewDataUrl?: string;
+  previewDataUrlPublicId?: string;
 }
 
 export interface ProductCustomizationConfig {
@@ -133,7 +120,9 @@ export interface ProductCustomizationConfig {
   selectedColorHex: string;
   selectedSize: string;
   previewFrontUrl?: string;
+  previewFrontPublicId?: string;
   previewBackUrl?: string;
+  previewBackPublicId?: string;
   lastSavedAt?: string;
 }
 
@@ -150,9 +139,12 @@ export interface CartItem {
     textColor?: string;
     fontFamily?: string;
     graphicUrl?: string;
+    graphicPublicId?: string;
     placement?: 'front' | 'back' | 'chest';
     previewDataUrl?: string;
+    previewDataUrlPublicId?: string;
     previewDataUrlBack?: string;
+    previewDataUrlBackPublicId?: string;
     sides?: {
       front?: SideDesignState;
       back?: SideDesignState;
@@ -210,10 +202,14 @@ export interface CustomDesign {
   designTextColor?: string;
   designFont?: string;
   graphicUrl?: string;
+  graphicPublicId?: string;
   placement: 'front' | 'back' | 'chest';
   previewDataUrl?: string;
+  previewDataUrlPublicId?: string;
   previewFrontUrl?: string;
+  previewFrontPublicId?: string;
   previewBackUrl?: string;
+  previewBackPublicId?: string;
   sides?: {
     front?: SideDesignState;
     back?: SideDesignState;
@@ -237,7 +233,6 @@ export interface LiveNotification {
 
 export interface FilterState {
   category: Category;
-  subcategory?: string;
   sizes: Size[];
   colors: string[]; // hex codes
   minPrice: string;

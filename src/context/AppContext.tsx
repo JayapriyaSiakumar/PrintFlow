@@ -11,7 +11,6 @@ import {
   Size,
   SortOption,
   CategoryItem,
-  SubcategoryItem,
 } from '../types';
 import { api, getStoredToken } from '../services/api';
 import { subscribeToSocketEvents } from '../services/socket';
@@ -37,12 +36,9 @@ interface AppContextType {
   loadingProducts: boolean;
   filters: FilterState;
   categories: CategoryItem[];
-  subcategories: SubcategoryItem[];
   loadingCategories: boolean;
   refreshCategories: () => Promise<void>;
-  refreshSubcategories: () => Promise<void>;
   setCategory: (cat: Category) => void;
-  setSubcategory: (subcat?: string) => void;
   toggleSizeFilter: (size: Size) => void;
   toggleColorFilter: (hex: string) => void;
   setPriceRange: (min: string, max: string) => void;
@@ -151,7 +147,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [totalProducts, setTotalProducts] = useState<number>(INITIAL_PRODUCTS.length);
   const [loadingProducts, setLoadingProducts] = useState<boolean>(false);
   const [categories, setCategories] = useState<CategoryItem[]>([]);
-  const [subcategories, setSubcategories] = useState<SubcategoryItem[]>([]);
   const [loadingCategories, setLoadingCategories] = useState<boolean>(false);
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
 
@@ -237,7 +232,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [cart]);
 
-  // Load Categories & Subcategories
+  // Load Categories
   const refreshCategories = useCallback(async () => {
     try {
       setLoadingCategories(true);
@@ -250,19 +245,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
-  const refreshSubcategories = useCallback(async () => {
-    try {
-      const res = await api.getSubcategories();
-      setSubcategories(res.subcategories);
-    } catch (err) {
-      console.warn('Could not fetch subcategories from server:', err);
-    }
-  }, []);
-
   useEffect(() => {
     refreshCategories();
-    refreshSubcategories();
-  }, [refreshCategories, refreshSubcategories]);
+  }, [refreshCategories]);
 
   // Load Products with current filters
   const refreshProducts = useCallback(async () => {
@@ -281,15 +266,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const catSlug = (typeof p.category === 'object' ? p.category.slug : '').toLowerCase();
           const catId = (typeof p.category === 'object' ? p.category.id : p.category || '').toLowerCase();
           return catName === catFilter || catSlug === catFilter || catId === catFilter;
-        });
-      }
-      if (filters.subcategory && filters.subcategory !== 'All') {
-        const subFilter = filters.subcategory.toLowerCase();
-        local = local.filter((p) => {
-          const subName = (typeof p.subcategory === 'object' ? p.subcategory.name : (p.subcategoryName || '')).toLowerCase();
-          const subSlug = (typeof p.subcategory === 'object' ? p.subcategory.slug : '').toLowerCase();
-          const subId = (typeof p.subcategory === 'object' ? p.subcategory.id : (typeof p.subcategory === 'string' ? p.subcategory : '')).toLowerCase();
-          return subName === subFilter || subSlug === subFilter || subId === subFilter;
         });
       }
       if (filters.sizes.length > 0) {
@@ -393,11 +369,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Filter Actions
   const setCategory = (category: Category) => {
-    setFilters((prev) => ({ ...prev, category, subcategory: undefined }));
-  };
-
-  const setSubcategory = (subcategory?: string) => {
-    setFilters((prev) => ({ ...prev, subcategory }));
+    setFilters((prev) => ({ ...prev, category }));
   };
 
   const toggleSizeFilter = (size: Size) => {
@@ -636,12 +608,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         loadingProducts,
         filters,
         categories,
-        subcategories,
         loadingCategories,
         refreshCategories,
-        refreshSubcategories,
         setCategory,
-        setSubcategory,
         toggleSizeFilter,
         toggleColorFilter,
         setPriceRange,
@@ -724,3 +693,5 @@ export const useApp = () => {
   }
   return context;
 };
+
+export const useAppContext = useApp;

@@ -2,7 +2,6 @@ import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
 import User from '../models/User';
 import Category from '../models/Category';
-import Subcategory from '../models/Subcategory';
 import Product from '../models/Product';
 import Order from '../models/Order';
 import Notification from '../models/Notification';
@@ -89,134 +88,33 @@ export const seedInitialDatabase = async () => {
       categoryMap[cat.name] = doc;
     }
 
-    // 3. Seed Subcategories if none exist
-    const defaultSubcategories = [
-      // Apparel
-      {
-        name: 'T-Shirts',
-        slug: 't-shirts',
-        categoryName: 'Apparel',
-        description: 'Classic crewnecks, relaxed fits, heavyweight cotton blanks.',
-        image: 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=800&q=80',
-        status: true,
-      },
-      {
-        name: 'Hoodies & Fleece',
-        slug: 'hoodies-fleece',
-        categoryName: 'Apparel',
-        description: 'Plush fleece pullovers, zip hoodies, heavyweight streetwear.',
-        image: 'https://images.unsplash.com/photo-1556905055-8f358a7a47b2?auto=format&fit=crop&w=800&q=80',
-        status: true,
-      },
-      {
-        name: 'Polos & Active Tops',
-        slug: 'polos-active-tops',
-        categoryName: 'Apparel',
-        description: 'Performance pique, moisture-wicking collars, activewear.',
-        image: 'https://images.unsplash.com/photo-1581655353564-df123a1eb820?auto=format&fit=crop&w=800&q=80',
-        status: true,
-      },
-      // Home Decor
-      {
-        name: 'Canvas & Wall Art',
-        slug: 'canvas-wall-art',
-        categoryName: 'Home Decor',
-        description: 'Archival gallery wrapped timber frame canvas prints.',
-        image: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=800&q=80',
-        status: true,
-      },
-      {
-        name: 'Drinkware & Mugs',
-        slug: 'drinkware-mugs',
-        categoryName: 'Home Decor',
-        description: 'Gloss ceramic sublimation mugs and insulated drinkware.',
-        image: 'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?auto=format&fit=crop&w=800&q=80',
-        status: true,
-      },
-      // Accessories
-      {
-        name: 'Bags & Totes',
-        slug: 'bags-totes',
-        categoryName: 'Accessories',
-        description: 'Heavy bull denim canvas everyday tote bags.',
-        image: 'https://images.unsplash.com/photo-1544816155-12df9643f363?auto=format&fit=crop&w=800&q=80',
-        status: true,
-      },
-      {
-        name: 'Hats & Headwear',
-        slug: 'hats-headwear',
-        categoryName: 'Accessories',
-        description: 'Unstructured chino dad hats, baseball caps, and beanies.',
-        image: 'https://images.unsplash.com/photo-1588850561407-ed78c282e89b?auto=format&fit=crop&w=800&q=80',
-        status: true,
-      },
-      // Stationery
-      {
-        name: 'Notebooks & Journals',
-        slug: 'notebooks-journals',
-        categoryName: 'Stationery',
-        description: 'Casebound matte hardcover journals with acid-free ruled paper.',
-        image: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=800&q=80',
-        status: true,
-      },
-      {
-        name: 'Stickers & Decals',
-        slug: 'stickers-decals',
-        categoryName: 'Stationery',
-        description: 'Contour die-cut UV-laminated waterproof vinyl sticker packs.',
-        image: 'https://images.unsplash.com/photo-1572375992501-4b0892d50c69?auto=format&fit=crop&w=800&q=80',
-        status: true,
-      },
-    ];
-
-    const subcategoryMap: Record<string, any> = {};
-    for (const sub of defaultSubcategories) {
-      const parentCat = categoryMap[sub.categoryName];
-      if (parentCat) {
-        let doc = await Subcategory.findOne({ category: parentCat._id, slug: sub.slug });
-        if (!doc) {
-          doc = await Subcategory.create({
-            name: sub.name,
-            slug: sub.slug,
-            category: parentCat._id,
-            description: sub.description,
-            image: sub.image,
-            status: sub.status,
-          });
-        }
-        subcategoryMap[sub.name] = doc;
-      }
-    }
-
-    // 4. Seed Products if none exist or migrate existing products
-    const productSubcatAssignment: Record<string, { cat: string; sub: string }> = {
-      'prod-1': { cat: 'Apparel', sub: 'T-Shirts' },
-      'prod-2': { cat: 'Apparel', sub: 'Hoodies & Fleece' },
-      'prod-3': { cat: 'Apparel', sub: 'T-Shirts' },
-      'prod-4': { cat: 'Apparel', sub: 'Polos & Active Tops' },
-      'prod-5': { cat: 'Apparel', sub: 'Hoodies & Fleece' },
-      'prod-6': { cat: 'Apparel', sub: 'T-Shirts' },
-      'prod-7': { cat: 'Home Decor', sub: 'Canvas & Wall Art' },
-      'prod-8': { cat: 'Home Decor', sub: 'Drinkware & Mugs' },
-      'prod-9': { cat: 'Accessories', sub: 'Bags & Totes' },
-      'prod-10': { cat: 'Accessories', sub: 'Hats & Headwear' },
-      'prod-11': { cat: 'Stationery', sub: 'Notebooks & Journals' },
-      'prod-12': { cat: 'Stationery', sub: 'Stickers & Decals' },
+    // 3. Seed Products if none exist or migrate existing products
+    const productCategoryAssignment: Record<string, string> = {
+      'prod-1': 'Apparel',
+      'prod-2': 'Apparel',
+      'prod-3': 'Apparel',
+      'prod-4': 'Apparel',
+      'prod-5': 'Apparel',
+      'prod-6': 'Apparel',
+      'prod-7': 'Home Decor',
+      'prod-8': 'Home Decor',
+      'prod-9': 'Accessories',
+      'prod-10': 'Accessories',
+      'prod-11': 'Stationery',
+      'prod-12': 'Stationery',
     };
 
     const productCount = await Product.countDocuments();
     if (productCount === 0) {
-      console.log('🌱 Seeding default products in MongoDB with Category & Subcategory references...');
+      console.log('🌱 Seeding default products in MongoDB with Category references...');
       const productsToInsert = INITIAL_PRODUCTS.map((p) => {
-        const assignment = productSubcatAssignment[p.id] || { cat: 'Apparel', sub: 'T-Shirts' };
-        const catDoc = categoryMap[assignment.cat] || categoryMap['Apparel'];
-        const subDoc = subcategoryMap[assignment.sub] || subcategoryMap['T-Shirts'];
+        const catName = productCategoryAssignment[p.id] || 'Apparel';
+        const catDoc = categoryMap[catName] || categoryMap['Apparel'];
 
         return {
           productId: p.id,
           name: p.name,
           category: catDoc?._id,
-          subcategory: subDoc?._id,
           price: p.price,
           stock: p.stock || 50,
           spec: p.spec,
@@ -232,30 +130,7 @@ export const seedInitialDatabase = async () => {
         };
       });
       await Product.insertMany(productsToInsert);
-      console.log('✅ Products seeded successfully with category and subcategory references.');
-    } else {
-      // Migrate existing products if category is not an ObjectId or subcategory is missing
-      const existingProducts = await Product.find({
-        $or: [{ subcategory: { $exists: false } }, { subcategory: null }],
-      });
-      if (existingProducts.length > 0) {
-        console.log(`🔄 Migrating ${existingProducts.length} existing products to Category & Subcategory references...`);
-        for (const prod of existingProducts) {
-          const assignment = productSubcatAssignment[prod.productId] || {
-            cat: typeof prod.category === 'string' ? prod.category : 'Apparel',
-            sub: 'T-Shirts',
-          };
-          const catDoc = categoryMap[assignment.cat] || categoryMap['Apparel'];
-          const subDoc = subcategoryMap[assignment.sub] || subcategoryMap['T-Shirts'];
-
-          if (catDoc && subDoc) {
-            prod.category = catDoc._id;
-            prod.subcategory = subDoc._id;
-            await prod.save();
-          }
-        }
-        console.log('✅ Product migration complete.');
-      }
+      console.log('✅ Products seeded successfully with category references.');
     }
 
     // 3. Seed sample Orders if none exist

@@ -28,6 +28,7 @@ import { ToolPanel } from './ToolPanel';
 import { PreviewModal } from './PreviewModal';
 import { PrintQualityWarning } from './PrintQualityWarning';
 import { getProductPrintArea, PrintableAreaConfig, EditorHistoryState } from './types';
+import { generateProductPreview } from '../../utils/previewGenerator';
 
 interface ProductDesignerPageProps {
   onClose?: () => void;
@@ -56,8 +57,6 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
       slug: 'heavyweight-cotton-crewneck-tee',
       category: 'cat-apparel',
       categoryName: 'Apparel',
-      subcategory: 'subcat-t-shirts',
-      subcategoryName: 'T-Shirts',
       price: 24.0,
       image: 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=800&q=80',
       description: 'Pre-shrunk 100% ring-spun combed cotton blank.',
@@ -291,13 +290,45 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
   const unitPrice = +(baseItemPrice * (1 - volumeDiscountPercent)).toFixed(2);
   const totalPrice = +(unitPrice * quantity).toFixed(2);
 
-  // Open Realistic Preview Modal
-  const handleOpenPreview = async () => {
-    if (exportPreviewRef.current) {
-      const snap = await exportPreviewRef.current();
-      if (activeSide === 'front') setPreviewFrontUrl(snap);
-      else setPreviewBackUrl(snap);
+  // Helper to ensure full layered preview (product image as base layer) for any side
+  const ensureLayeredPreview = async (side: DesignSide): Promise<string> => {
+    const isFront = side === 'front';
+    const sideElements = isFront ? frontElements : backElements;
+    const sidePrintArea = getProductPrintArea(product, side);
+
+    try {
+      const res = await generateProductPreview({
+        product,
+        selectedColor,
+        activeSide: side,
+        printArea: sidePrintArea,
+        elements: sideElements,
+      });
+      if (res.dataUrl) {
+        if (isFront) setPreviewFrontUrl(res.dataUrl);
+        else setPreviewBackUrl(res.dataUrl);
+        return res.dataUrl;
+      }
+    } catch (e) {
+      console.warn('generateProductPreview error:', e);
     }
+    return '';
+  };
+
+  // Handle Side Switch with Auto-Snapshot
+  const handleSwitchSide = async (side: DesignSide) => {
+    if (side === activeSide) return;
+    await ensureLayeredPreview(activeSide);
+    setActiveSide(side);
+    setSelectedElementId(null);
+  };
+
+  // Open Realistic Preview Modal with Guaranteed Base Product Image
+  const handleOpenPreview = async () => {
+    // Generate active side snapshot with product image as Layer 1
+    await ensureLayeredPreview(activeSide);
+    // Also generate opposite side in background so when switching in modal it's ready
+    ensureLayeredPreview(activeSide === 'front' ? 'back' : 'front');
     setIsPreviewModalOpen(true);
   };
 
@@ -305,22 +336,19 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
   const handleSaveToAccount = async () => {
     setIsSaving(true);
     try {
-      let snapFront = previewFrontUrl;
-      if (exportPreviewRef.current) {
-        snapFront = await exportPreviewRef.current();
-        setPreviewFrontUrl(snapFront);
-      }
+      const snapFront = (await ensureLayeredPreview('front')) || previewFrontUrl;
+      const snapBack = (await ensureLayeredPreview('back')) || previewBackUrl;
 
       const designConfig: ProductCustomizationConfig = {
         sides: {
-          front: { elements: frontElements, previewDataUrl: snapFront },
-          back: { elements: backElements, previewDataUrl: previewBackUrl },
+          front: { elements: frontElements, previewDataUrl: snapFront || product.image },
+          back: { elements: backElements, previewDataUrl: snapBack || snapFront || product.image },
         },
         activeSide,
         selectedColorHex: selectedColor.hex,
         selectedSize,
-        previewFrontUrl: snapFront,
-        previewBackUrl,
+        previewFrontUrl: snapFront || product.image,
+        previewBackUrl: snapBack || snapFront || product.image,
         lastSavedAt: new Date().toISOString(),
       };
 
@@ -339,8 +367,8 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
         designText: primaryText,
         placement: activeSide,
         previewDataUrl: snapFront || product.image,
-        previewFrontUrl: snapFront,
-        previewBackUrl,
+        previewFrontUrl: snapFront || product.image,
+        previewBackUrl: snapBack || snapFront || product.image,
         sides: designConfig.sides as any,
         designConfig,
       });
@@ -355,11 +383,8 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
   const handleAddToCart = async () => {
     setIsAddingToCart(true);
     try {
-      let snapFront = previewFrontUrl;
-      if (exportPreviewRef.current) {
-        snapFront = await exportPreviewRef.current();
-        setPreviewFrontUrl(snapFront);
-      }
+      const snapFront = (await ensureLayeredPreview('front')) || previewFrontUrl;
+      const snapBack = (await ensureLayeredPreview('back')) || previewBackUrl;
 
       const primaryText =
         frontElements.find((e) => e.type === 'text')?.text ||
@@ -368,14 +393,14 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
 
       const designConfig: ProductCustomizationConfig = {
         sides: {
-          front: { elements: frontElements, previewDataUrl: snapFront },
-          back: { elements: backElements, previewDataUrl: previewBackUrl },
+          front: { elements: frontElements, previewDataUrl: snapFront || product.image },
+          back: { elements: backElements, previewDataUrl: snapBack || snapFront || product.image },
         },
         activeSide,
         selectedColorHex: selectedColor.hex,
         selectedSize,
-        previewFrontUrl: snapFront,
-        previewBackUrl,
+        previewFrontUrl: snapFront || product.image,
+        previewBackUrl: snapBack || snapFront || product.image,
         lastSavedAt: new Date().toISOString(),
       };
 
@@ -395,7 +420,7 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
           fontFamily: frontElements.find((e) => e.type === 'text')?.fontFamily || 'Montserrat',
           placement: hasBackCustomization ? 'back' : 'front',
           previewDataUrl: snapFront || product.image,
-          previewDataUrlBack: previewBackUrl,
+          previewDataUrlBack: snapBack || previewBackUrl,
           sides: designConfig.sides,
           designConfig,
         },
@@ -456,10 +481,7 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
             <button
               id="btn-side-front"
               type="button"
-              onClick={() => {
-                setActiveSide('front');
-                setSelectedElementId(null);
-              }}
+              onClick={() => handleSwitchSide('front')}
               className={`px-3.5 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                 activeSide === 'front'
                   ? 'bg-[#0058be] text-white shadow-xs'
@@ -481,10 +503,7 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
             <button
               id="btn-side-back"
               type="button"
-              onClick={() => {
-                setActiveSide('back');
-                setSelectedElementId(null);
-              }}
+              onClick={() => handleSwitchSide('back')}
               className={`px-3.5 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                 activeSide === 'back'
                   ? 'bg-[#0058be] text-white shadow-xs'

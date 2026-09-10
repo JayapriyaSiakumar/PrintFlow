@@ -1,3 +1,4 @@
+import './backend/config/envSanitizer';
 import express, { Request, Response, NextFunction } from 'express';
 import http from 'http';
 import path from 'path';
@@ -22,12 +23,12 @@ import { errorHandler } from './backend/middleware/errorMiddleware';
 import authRoutes from './backend/routes/authRoutes';
 import productRoutes from './backend/routes/productRoutes';
 import categoryRoutes from './backend/routes/categoryRoutes';
-import subcategoryRoutes from './backend/routes/subcategoryRoutes';
 import orderRoutes from './backend/routes/orderRoutes';
 import designRoutes from './backend/routes/designRoutes';
 import adminRoutes from './backend/routes/adminRoutes';
 import notificationRoutes from './backend/routes/notificationRoutes';
 import publicRoutes from './backend/routes/publicRoutes';
+import uploadRoutes from './backend/routes/uploadRoutes';
 
 // Load environment variables
 dotenv.config();
@@ -39,7 +40,8 @@ connectDB().then(async (conn) => {
   }
 });
 
-const PORT = process.env.PORT || 3000;
+// Bind strictly to Port 3000 as required by nginx reverse proxy
+const PORT = 3000;
 
 // Re-export for compatibility with tests and helpers
 export const db = memoryStore;
@@ -66,12 +68,36 @@ export async function createExpressApp(ioInstance?: SocketIOServer) {
   app.use('/api/auth', authRoutes);
   app.use('/api/products', productRoutes);
   app.use('/api/categories', categoryRoutes);
-  app.use('/api/subcategories', subcategoryRoutes);
   app.use('/api/orders', orderRoutes);
   app.use('/api/designs', designRoutes);
   app.use('/api/admin', adminRoutes);
   app.use('/api/notifications', notificationRoutes);
+  app.use('/api/upload', uploadRoutes);
   app.use('/api', publicRoutes);
+
+  // Safe image proxy to prevent tainted canvas in client-side preview exports
+  app.get('/api/proxy-image', async (req: Request, res: Response) => {
+    const imageUrl = req.query.url as string;
+    if (!imageUrl) {
+      return res.status(400).json({ success: false, error: 'URL parameter is required.' });
+    }
+    try {
+      const fetchRes = await fetch(imageUrl);
+      if (!fetchRes.ok) {
+        return res.status(fetchRes.status).send('Failed to fetch remote image');
+      }
+      const contentType = fetchRes.headers.get('content-type') || 'image/jpeg';
+      const arrayBuffer = await fetchRes.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      return res.send(buffer);
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
 
   // Backward compatibility aliases for root level routes
   app.use('/register', (req, res, next) => {

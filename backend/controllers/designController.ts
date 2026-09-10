@@ -3,6 +3,11 @@ import mongoose from 'mongoose';
 import CustomDesign from '../models/CustomDesign';
 import memoryStore from '../utils/memoryStore';
 import { AuthenticatedRequest } from '../middleware/authMiddleware';
+import {
+  uploadBase64ToCloudinary,
+  deleteFromCloudinary,
+  CLOUDINARY_FOLDERS,
+} from '../config/cloudinary';
 
 /**
  * @desc    Get user custom designs (admin gets all)
@@ -63,6 +68,56 @@ export const saveDesign = async (req: AuthenticatedRequest, res: Response) => {
     const designId = `dsg-${Date.now()}`;
     const userId = req.user ? req.user.id : `guest-${Date.now()}`;
 
+    let finalPreviewFront = previewFrontUrl || previewDataUrl || '';
+    let finalPreviewFrontPublicId = req.body.previewFrontPublicId || req.body.previewDataUrlPublicId || '';
+    let finalPreviewBack = previewBackUrl || '';
+    let finalPreviewBackPublicId = req.body.previewBackPublicId || '';
+    let finalGraphicUrl = graphicUrl || '';
+    let finalGraphicPublicId = req.body.graphicPublicId || '';
+
+    // If previews are base64 data URLs, upload them to Cloudinary
+    if (finalPreviewFront && finalPreviewFront.startsWith('data:image/')) {
+      try {
+        const uploadRes = await uploadBase64ToCloudinary(finalPreviewFront, {
+          folder: CLOUDINARY_FOLDERS.PREVIEWS,
+          publicIdPrefix: `preview_front_${designId}`,
+          tags: ['printflow', 'design-preview', 'front'],
+        });
+        finalPreviewFront = uploadRes.secure_url || uploadRes.url;
+        finalPreviewFrontPublicId = uploadRes.publicId;
+      } catch (err) {
+        console.error('Failed to upload preview front to Cloudinary:', err);
+      }
+    }
+
+    if (finalPreviewBack && finalPreviewBack.startsWith('data:image/')) {
+      try {
+        const uploadRes = await uploadBase64ToCloudinary(finalPreviewBack, {
+          folder: CLOUDINARY_FOLDERS.PREVIEWS,
+          publicIdPrefix: `preview_back_${designId}`,
+          tags: ['printflow', 'design-preview', 'back'],
+        });
+        finalPreviewBack = uploadRes.secure_url || uploadRes.url;
+        finalPreviewBackPublicId = uploadRes.publicId;
+      } catch (err) {
+        console.error('Failed to upload preview back to Cloudinary:', err);
+      }
+    }
+
+    if (finalGraphicUrl && finalGraphicUrl.startsWith('data:image/')) {
+      try {
+        const uploadRes = await uploadBase64ToCloudinary(finalGraphicUrl, {
+          folder: CLOUDINARY_FOLDERS.CUSTOMER_FILES,
+          publicIdPrefix: `art_${designId}`,
+          tags: ['printflow', 'customer-artwork'],
+        });
+        finalGraphicUrl = uploadRes.secure_url || uploadRes.url;
+        finalGraphicPublicId = uploadRes.publicId;
+      } catch (err) {
+        console.error('Failed to upload customer artwork to Cloudinary:', err);
+      }
+    }
+
     if (mongoose.connection.readyState === 1) {
       const design = await CustomDesign.create({
         designId,
@@ -76,11 +131,15 @@ export const saveDesign = async (req: AuthenticatedRequest, res: Response) => {
         designText,
         designTextColor,
         designFont,
-        graphicUrl,
+        graphicUrl: finalGraphicUrl,
+        graphicPublicId: finalGraphicPublicId,
         placement: placement || 'front',
-        previewDataUrl: previewDataUrl || previewFrontUrl,
-        previewFrontUrl,
-        previewBackUrl,
+        previewDataUrl: finalPreviewFront,
+        previewDataUrlPublicId: finalPreviewFrontPublicId,
+        previewFrontUrl: finalPreviewFront,
+        previewFrontPublicId: finalPreviewFrontPublicId,
+        previewBackUrl: finalPreviewBack,
+        previewBackPublicId: finalPreviewBackPublicId,
         sides: sides || { front: { elements: [] }, back: { elements: [] } },
         designConfig,
       });
@@ -100,11 +159,15 @@ export const saveDesign = async (req: AuthenticatedRequest, res: Response) => {
       designText,
       designTextColor,
       designFont,
-      graphicUrl,
+      graphicUrl: finalGraphicUrl,
+      graphicPublicId: finalGraphicPublicId,
       placement: placement || 'front',
-      previewDataUrl: previewDataUrl || previewFrontUrl,
-      previewFrontUrl,
-      previewBackUrl,
+      previewDataUrl: finalPreviewFront,
+      previewDataUrlPublicId: finalPreviewFrontPublicId,
+      previewFrontUrl: finalPreviewFront,
+      previewFrontPublicId: finalPreviewFrontPublicId,
+      previewBackUrl: finalPreviewBack,
+      previewBackPublicId: finalPreviewBackPublicId,
       sides: sides || { front: { elements: [] }, back: { elements: [] } },
       designConfig,
       createdAt: new Date().toISOString(),
@@ -173,6 +236,14 @@ export const deleteDesign = async (req: AuthenticatedRequest, res: Response) => 
         return res.status(403).json({ success: false, error: 'Access denied: You cannot delete another user\'s design.' });
       }
 
+      // Clean up Cloudinary assets (with automatic order preservation protection)
+      if (design.previewFrontPublicId) await deleteFromCloudinary(design.previewFrontPublicId);
+      if (design.previewBackPublicId) await deleteFromCloudinary(design.previewBackPublicId);
+      if (design.previewDataUrlPublicId && design.previewDataUrlPublicId !== design.previewFrontPublicId) {
+        await deleteFromCloudinary(design.previewDataUrlPublicId);
+      }
+      if (design.graphicPublicId) await deleteFromCloudinary(design.graphicPublicId);
+
       await design.deleteOne();
       return res.json({ success: true, message: 'Design deleted successfully' });
     }
@@ -186,6 +257,10 @@ export const deleteDesign = async (req: AuthenticatedRequest, res: Response) => 
     if (req.user && req.user.role !== 'admin' && req.user.id !== design.userId) {
       return res.status(403).json({ success: false, error: 'Access denied: You cannot delete another user\'s design.' });
     }
+
+    if ((design as any).previewFrontPublicId) await deleteFromCloudinary((design as any).previewFrontPublicId);
+    if ((design as any).previewBackPublicId) await deleteFromCloudinary((design as any).previewBackPublicId);
+    if ((design as any).graphicPublicId) await deleteFromCloudinary((design as any).graphicPublicId);
 
     memoryStore.designs.splice(index, 1);
     res.json({ success: true, message: 'Design deleted successfully' });

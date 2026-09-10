@@ -3,7 +3,6 @@ import mongoose from 'mongoose';
 import User from '../models/User';
 import Product from '../models/Product';
 import Category from '../models/Category';
-import Subcategory from '../models/Subcategory';
 import Order from '../models/Order';
 import CustomDesign from '../models/CustomDesign';
 import Notification from '../models/Notification';
@@ -343,10 +342,11 @@ export const createAdminProduct = async (req: AuthenticatedRequest, res: Respons
       name,
       price,
       category,
-      subcategory,
       spec,
       description,
       image,
+      imagePublicId,
+      mockupImages,
       stock = 100,
       sizes,
       colors,
@@ -354,10 +354,10 @@ export const createAdminProduct = async (req: AuthenticatedRequest, res: Respons
       featured,
     } = req.body;
 
-    if (!name || !price || !category || !subcategory) {
+    if (!name || !price || !category) {
       return res.status(400).json({
         success: false,
-        error: 'Product name, price, category, and subcategory are all required.',
+        error: 'Product name, price, and category are all required.',
       });
     }
 
@@ -378,34 +378,11 @@ export const createAdminProduct = async (req: AuthenticatedRequest, res: Respons
         return res.status(400).json({ success: false, error: 'Selected category does not exist.' });
       }
 
-      // 2. Validate Subcategory exists
-      let subDoc = null;
-      if (mongoose.Types.ObjectId.isValid(subcategory)) {
-        subDoc = await Subcategory.findById(subcategory);
-      }
-      if (!subDoc) {
-        subDoc = await Subcategory.findOne({
-          $or: [{ slug: subcategory.toLowerCase() }, { name: new RegExp(`^${subcategory}$`, 'i') }],
-        });
-      }
-      if (!subDoc) {
-        return res.status(400).json({ success: false, error: 'Selected subcategory does not exist.' });
-      }
-
-      // 3. Backend validate: Subcategory MUST belong to Category
-      if (subDoc.category.toString() !== catDoc._id.toString()) {
-        return res.status(400).json({
-          success: false,
-          error: `Selected subcategory "${subDoc.name}" does not belong to category "${catDoc.name}".`,
-        });
-      }
-
       const product = await Product.create({
         productId,
         name: name.trim(),
         price: Number(price),
         category: catDoc._id,
-        subcategory: subDoc._id,
         spec: spec || '100% Premium Combed Cotton',
         description: description || 'High-grade custom apparel blank designed for precision on-demand printing.',
         sizes: sizes || ['S', 'M', 'L', 'XL', '2XL'],
@@ -414,6 +391,8 @@ export const createAdminProduct = async (req: AuthenticatedRequest, res: Respons
           { name: 'Onyx Black', hex: '#111111', bgClass: 'bg-neutral-900' },
         ],
         image: image || 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=800&q=80',
+        imagePublicId: imagePublicId || '',
+        mockupImages: Array.isArray(mockupImages) ? mockupImages : [],
         tag: tag || 'New',
         rating: 5.0,
         reviewsCount: 1,
@@ -422,8 +401,7 @@ export const createAdminProduct = async (req: AuthenticatedRequest, res: Respons
       });
 
       const populated = await Product.findById(product._id)
-        .populate('category', 'name slug status')
-        .populate('subcategory', 'name slug status');
+        .populate('category', 'name slug status');
 
       return res.status(201).json({
         success: true,
@@ -440,29 +418,12 @@ export const createAdminProduct = async (req: AuthenticatedRequest, res: Respons
       return res.status(400).json({ success: false, error: 'Selected category does not exist.' });
     }
 
-    const parentSub = memoryStore.subcategories.find(
-      (s) => s.id === subcategory || s.slug === subcategory.toLowerCase() || s.name.toLowerCase() === subcategory.toLowerCase()
-    );
-    if (!parentSub) {
-      return res.status(400).json({ success: false, error: 'Selected subcategory does not exist.' });
-    }
-
-    const subCatId = typeof parentSub.category === 'object' ? (parentSub.category as any).id : parentSub.category;
-    if (subCatId !== parentCat.id) {
-      return res.status(400).json({
-        success: false,
-        error: `Selected subcategory "${parentSub.name}" does not belong to category "${parentCat.name}".`,
-      });
-    }
-
     const newProduct = {
       id: productId,
       name: name.trim(),
       price: Number(price),
       category: { id: parentCat.id, name: parentCat.name, slug: parentCat.slug, status: parentCat.status } as any,
-      subcategory: { id: parentSub.id, name: parentSub.name, slug: parentSub.slug, status: parentSub.status } as any,
       categoryName: parentCat.name,
-      subcategoryName: parentSub.name,
       spec: spec || '100% Premium Combed Cotton',
       description: description || 'High-grade custom apparel blank designed for precision on-demand printing.',
       sizes: sizes || ['S', 'M', 'L', 'XL', '2XL'],
@@ -471,6 +432,8 @@ export const createAdminProduct = async (req: AuthenticatedRequest, res: Respons
         { name: 'Onyx Black', hex: '#111111', bgClass: 'bg-neutral-900' },
       ],
       image: image || 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=800&q=80',
+      imagePublicId: imagePublicId || '',
+      mockupImages: Array.isArray(mockupImages) ? mockupImages : [],
       tag: tag || 'New',
       rating: 5.0,
       reviewsCount: 1,
@@ -501,7 +464,7 @@ export const createAdminProduct = async (req: AuthenticatedRequest, res: Respons
 export const updateAdminProduct = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, price, category, subcategory, spec, description, image, stock, tag, featured } = req.body;
+    const { name, price, category, spec, description, image, imagePublicId, mockupImages, stock, tag, featured } = req.body;
 
     if (mongoose.connection.readyState === 1) {
       let product = await Product.findOne({ productId: id });
@@ -511,9 +474,6 @@ export const updateAdminProduct = async (req: AuthenticatedRequest, res: Respons
       if (!product) {
         return res.status(404).json({ success: false, error: 'Product not found.' });
       }
-
-      let targetCatId = product.category;
-      let targetSubId = product.subcategory;
 
       // Validate new category if provided
       if (category) {
@@ -529,37 +489,7 @@ export const updateAdminProduct = async (req: AuthenticatedRequest, res: Respons
         if (!catDoc) {
           return res.status(400).json({ success: false, error: 'Selected category does not exist.' });
         }
-        targetCatId = catDoc._id;
         product.category = catDoc._id;
-      }
-
-      // Validate new subcategory if provided
-      if (subcategory) {
-        let subDoc = null;
-        if (mongoose.Types.ObjectId.isValid(subcategory)) {
-          subDoc = await Subcategory.findById(subcategory);
-        }
-        if (!subDoc) {
-          subDoc = await Subcategory.findOne({
-            $or: [{ slug: subcategory.toLowerCase() }, { name: new RegExp(`^${subcategory}$`, 'i') }],
-          });
-        }
-        if (!subDoc) {
-          return res.status(400).json({ success: false, error: 'Selected subcategory does not exist.' });
-        }
-        targetSubId = subDoc._id;
-        product.subcategory = subDoc._id;
-      }
-
-      // Backend relationship verification
-      if (targetCatId && targetSubId) {
-        const subDoc = await Subcategory.findById(targetSubId);
-        if (subDoc && subDoc.category.toString() !== targetCatId.toString()) {
-          return res.status(400).json({
-            success: false,
-            error: 'Selected subcategory does not belong to the selected category.',
-          });
-        }
       }
 
       if (name) product.name = name.trim();
@@ -567,6 +497,8 @@ export const updateAdminProduct = async (req: AuthenticatedRequest, res: Respons
       if (spec) product.spec = spec;
       if (description) product.description = description;
       if (image) product.image = image;
+      if (imagePublicId !== undefined) product.imagePublicId = imagePublicId;
+      if (mockupImages !== undefined) product.mockupImages = Array.isArray(mockupImages) ? mockupImages : [];
       if (stock !== undefined) product.stock = Number(stock);
       if (tag !== undefined) product.tag = tag;
       if (featured !== undefined) product.featured = Boolean(featured);
@@ -574,8 +506,7 @@ export const updateAdminProduct = async (req: AuthenticatedRequest, res: Respons
       await product.save();
 
       const populated = await Product.findById(product._id)
-        .populate('category', 'name slug status')
-        .populate('subcategory', 'name slug status');
+        .populate('category', 'name slug status');
 
       return res.json({
         success: true,
@@ -591,9 +522,6 @@ export const updateAdminProduct = async (req: AuthenticatedRequest, res: Respons
 
     const p = memoryStore.products[productIndex];
 
-    let currentCat = typeof p.category === 'object' ? (p.category as any).id : p.category;
-    let currentSub = typeof p.subcategory === 'object' ? (p.subcategory as any).id : p.subcategory;
-
     if (category) {
       const parentCat = memoryStore.categories.find(
         (c) => c.id === category || c.slug === category.toLowerCase() || c.name.toLowerCase() === category.toLowerCase()
@@ -603,33 +531,6 @@ export const updateAdminProduct = async (req: AuthenticatedRequest, res: Respons
       }
       p.category = { id: parentCat.id, name: parentCat.name, slug: parentCat.slug, status: parentCat.status } as any;
       p.categoryName = parentCat.name;
-      currentCat = parentCat.id;
-    }
-
-    if (subcategory) {
-      const parentSub = memoryStore.subcategories.find(
-        (s) => s.id === subcategory || s.slug === subcategory.toLowerCase() || s.name.toLowerCase() === subcategory.toLowerCase()
-      );
-      if (!parentSub) {
-        return res.status(400).json({ success: false, error: 'Selected subcategory does not exist.' });
-      }
-      p.subcategory = { id: parentSub.id, name: parentSub.name, slug: parentSub.slug, status: parentSub.status } as any;
-      p.subcategoryName = parentSub.name;
-      currentSub = parentSub.id;
-    }
-
-    // Verify subcategory belongs to category
-    if (currentSub) {
-      const parentSub = memoryStore.subcategories.find((s) => s.id === currentSub);
-      if (parentSub) {
-        const subParentCatId = typeof parentSub.category === 'object' ? (parentSub.category as any).id : parentSub.category;
-        if (subParentCatId !== currentCat) {
-          return res.status(400).json({
-            success: false,
-            error: 'Selected subcategory does not belong to the selected category.',
-          });
-        }
-      }
     }
 
     if (name) p.name = name.trim();
@@ -637,6 +538,8 @@ export const updateAdminProduct = async (req: AuthenticatedRequest, res: Respons
     if (spec) p.spec = spec;
     if (description) p.description = description;
     if (image) p.image = image;
+    if (imagePublicId !== undefined) p.imagePublicId = imagePublicId;
+    if (mockupImages !== undefined) p.mockupImages = Array.isArray(mockupImages) ? mockupImages : [];
     if (stock !== undefined) p.stock = Number(stock);
     if (tag !== undefined) p.tag = tag;
     if (featured !== undefined) p.featured = Boolean(featured);

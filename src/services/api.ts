@@ -8,7 +8,6 @@ import {
   FilterState,
   AdminDashboardStats,
   CategoryItem,
-  SubcategoryItem,
 } from '../types';
 
 const TOKEN_KEY = 'printflow_jwt_token';
@@ -71,7 +70,6 @@ export const api = {
   async getProducts(filters?: Partial<FilterState>): Promise<{ products: Product[]; total: number }> {
     const params = new URLSearchParams();
     if (filters?.category && filters.category !== 'All') params.set('category', filters.category);
-    if (filters?.subcategory && filters.subcategory !== 'All') params.set('subcategory', filters.subcategory);
     if (filters?.sizes && filters.sizes.length > 0) params.set('sizes', filters.sizes.join(','));
     if (filters?.colors && filters.colors.length > 0) params.set('colors', filters.colors.join(','));
     if (filters?.minPrice) params.set('minPrice', filters.minPrice);
@@ -122,46 +120,6 @@ export const api = {
 
   async toggleCategoryStatus(id: string): Promise<{ success: boolean; category: CategoryItem; message: string }> {
     return fetchJson<{ success: boolean; category: CategoryItem; message: string }>(`/api/categories/${id}/toggle-status`, {
-      method: 'PATCH',
-    });
-  },
-
-  // --- Subcategories ---
-  async getSubcategories(params?: { category?: string; status?: boolean | string; search?: string }): Promise<{ subcategories: SubcategoryItem[]; total: number }> {
-    const searchParams = new URLSearchParams();
-    if (params?.category && params.category !== 'all') searchParams.set('category', params.category);
-    if (params?.status !== undefined && params.status !== '') searchParams.set('status', String(params.status));
-    if (params?.search) searchParams.set('search', params.search);
-    const query = searchParams.toString();
-    return fetchJson<{ subcategories: SubcategoryItem[]; total: number }>(`/api/subcategories${query ? `?${query}` : ''}`);
-  },
-
-  async getSubcategoryById(id: string): Promise<SubcategoryItem> {
-    return fetchJson<SubcategoryItem>(`/api/subcategories/${id}`);
-  },
-
-  async createSubcategory(data: Partial<SubcategoryItem>): Promise<{ success: boolean; subcategory: SubcategoryItem; message: string }> {
-    return fetchJson<{ success: boolean; subcategory: SubcategoryItem; message: string }>('/api/subcategories', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
-
-  async updateSubcategory(id: string, data: Partial<SubcategoryItem>): Promise<{ success: boolean; subcategory: SubcategoryItem; message: string }> {
-    return fetchJson<{ success: boolean; subcategory: SubcategoryItem; message: string }>(`/api/subcategories/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
-  },
-
-  async deleteSubcategory(id: string): Promise<{ success: boolean; message: string }> {
-    return fetchJson<{ success: boolean; message: string }>(`/api/subcategories/${id}`, {
-      method: 'DELETE',
-    });
-  },
-
-  async toggleSubcategoryStatus(id: string): Promise<{ success: boolean; subcategory: SubcategoryItem; message: string }> {
-    return fetchJson<{ success: boolean; subcategory: SubcategoryItem; message: string }>(`/api/subcategories/${id}/toggle-status`, {
       method: 'PATCH',
     });
   },

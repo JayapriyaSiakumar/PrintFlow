@@ -116,18 +116,21 @@ export const ToolPanel: React.FC<ToolPanelProps> = ({
     });
   };
 
-  // Upload image handler
+  const [isUploadingImage, setIsUploadingImage] = useState<boolean>(false);
+
+  // Upload image handler with Cloudinary integration
   const processUploadedImageFile = (file: File) => {
     if (!file.type.startsWith('image/')) {
       alert('Please upload a valid image file (PNG, JPG, SVG, WebP)');
       return;
     }
 
+    setIsUploadingImage(true);
     const reader = new FileReader();
     reader.onload = (e) => {
-      const src = e.target?.result as string;
+      const initialSrc = e.target?.result as string;
       const img = new Image();
-      img.onload = () => {
+      img.onload = async () => {
         const id = `el-img-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
         // Fit within printable bounds while maintaining aspect ratio
         const maxInitialDim = 180;
@@ -146,7 +149,7 @@ export const ToolPanel: React.FC<ToolPanelProps> = ({
         const newEl: DesignElement = {
           id,
           type: 'image',
-          src,
+          src: initialSrc,
           naturalWidth: img.naturalWidth,
           naturalHeight: img.naturalHeight,
           aspectRatio: aspect,
@@ -166,8 +169,34 @@ export const ToolPanel: React.FC<ToolPanelProps> = ({
         onAddElement(newEl);
         onSelectElement(id);
         setActiveTab('upload');
+
+        // Asynchronously upload to Cloudinary storage
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+          const token = localStorage.getItem('token');
+          const res = await fetch('/api/upload/customer-file', {
+            method: 'POST',
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            body: formData,
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success && data.url) {
+              onUpdateElement(id, {
+                src: data.url,
+                publicId: data.publicId,
+              });
+            }
+          }
+        } catch (uploadErr) {
+          console.warn('Background Cloudinary artwork upload error, retained local buffer:', uploadErr);
+        } finally {
+          setIsUploadingImage(false);
+        }
       };
-      img.src = src;
+      img.src = initialSrc;
     };
     reader.readAsDataURL(file);
   };
