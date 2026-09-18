@@ -1,5 +1,6 @@
-import { DesignElement, DesignSide, Product, ProductColor } from '../types';
+import { DesignElement, DesignSide, Product, ProductColor, ProductCustomizationView } from '../types';
 import { PrintableAreaConfig } from '../components/customizer/types';
+import { getEffectiveCustomizationConfig, resolvePrintableAreaPixels } from './customizationEngine';
 
 // Cache for preloaded HTMLImageElements to make re-renders instant
 const loadedImageCache = new Map<string, HTMLImageElement>();
@@ -65,7 +66,8 @@ export interface PreviewGenerationOptions {
   product: Product | null;
   selectedColor: ProductColor;
   activeSide: DesignSide;
-  printArea: PrintableAreaConfig;
+  printArea?: PrintableAreaConfig;
+  view?: ProductCustomizationView;
   elements: DesignElement[];
   width?: number;
   height?: number;
@@ -79,7 +81,7 @@ export interface GeneratedPreviewResult {
 
 /**
  * Generates a full composite preview image where:
- * 1. FIRST LAYER (BASE): Default or product image + garment color tint
+ * 1. FIRST LAYER (BASE): Generic product mockup image for the active view + optional tint
  * 2. SECOND LAYER (OVERLAY): Customer customizations (text, graphics, cliparts)
  *
  * This ensures that every preview (preview modal, cart item, saved design, order)
@@ -92,20 +94,28 @@ export async function generateProductPreview(
     product,
     selectedColor,
     activeSide,
-    printArea,
+    printArea: explicitPrintArea,
+    view: explicitView,
     elements,
     width = 600,
     height = 648,
   } = options;
 
-  // 1. Determine base product mockup image
-  const activeSideMockup = product?.mockupImages?.find((m) => m.side === activeSide);
+  // 1. Determine effective customization configuration & view
+  const config = getEffectiveCustomizationConfig(product);
+  const currentView =
+    explicitView ||
+    config.views.find((v) => v.id === activeSide) ||
+    config.views[0];
+
+  // 2. Determine base product mockup image
   const baseImageUrl =
-    activeSideMockup?.url ||
+    currentView?.mockupUrl ||
+    product?.mockupImages?.find((m) => m.side === activeSide)?.url ||
     product?.image ||
     'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=800&q=80';
 
-  // 2. Setup Offscreen Canvas
+  // 3. Setup Offscreen Canvas
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
@@ -151,48 +161,71 @@ export async function generateProductPreview(
     // Draw the product image as base
     ctx.drawImage(baseImg, drawX, drawY, drawW, drawH);
 
-    // Color Tint Overlay if not pure white
-    if (selectedColor.hex && selectedColor.hex.toLowerCase() !== '#ffffff') {
+    // Color Tint Overlay if enabled by product config & color is not pure white
+    const tintingEnabled = config.colorTinting?.enabled !== false;
+    if (tintingEnabled && selectedColor.hex && selectedColor.hex.toLowerCase() !== '#ffffff') {
       ctx.save();
-      ctx.globalCompositeOperation = 'multiply';
+      ctx.globalCompositeOperation = (config.colorTinting?.blendMode as GlobalCompositeOperation) || 'multiply';
       ctx.fillStyle = selectedColor.hex;
-      ctx.globalAlpha = 0.36;
+      ctx.globalAlpha = config.colorTinting?.opacity || 0.36;
       ctx.fillRect(drawX, drawY, drawW, drawH);
       ctx.restore();
     }
 
-    // Back View Pill Indicator
-    if (activeSide === 'back') {
+    // View Label Indicator (if product has multiple views)
+    if (config.views.length > 1 && currentView && currentView.name) {
       ctx.save();
-      const pillW = 90 * scale;
+      const badgeText = currentView.name.toUpperCase();
+      ctx.font = `bold ${Math.round(9 * scale)}px Inter, sans-serif`;
+      const textMetrics = ctx.measureText(badgeText);
+      const pillW = Math.max(80 * scale, textMetrics.width + 20 * scale);
       const pillH = 22 * scale;
       const pillX = width - pillW - 16 * scale;
       const pillY = 16 * scale;
 
       ctx.fillStyle = 'rgba(26, 28, 28, 0.75)';
       ctx.beginPath();
-      ctx.roundRect ? ctx.roundRect(pillX, pillY, pillW, pillH, 11 * scale) : ctx.rect(pillX, pillY, pillW, pillH);
+      if (ctx.roundRect) {
+        ctx.roundRect(pillX, pillY, pillW, pillH, 11 * scale);
+      } else {
+        ctx.rect(pillX, pillY, pillW, pillH);
+      }
       ctx.fill();
 
       ctx.fillStyle = '#ffffff';
-      ctx.font = `bold ${Math.round(9 * scale)}px Inter, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('BACK VIEW', pillX + pillW / 2, pillY + pillH / 2);
+      ctx.fillText(badgeText, pillX + pillW / 2, pillY + pillH / 2);
       ctx.restore();
     }
   } catch (err) {
     console.warn('Warning: could not draw base image to canvas:', err);
-    // Draw placeholder garment silhouette if image load failed
+    // Draw placeholder silhouette if image load failed
     ctx.fillStyle = selectedColor.hex || '#f1f5f9';
     ctx.beginPath();
-    ctx.roundRect ? ctx.roundRect(width * 0.15, height * 0.1, width * 0.7, height * 0.8, 16 * scale) : ctx.rect(width * 0.15, height * 0.1, width * 0.7, height * 0.8);
+    if (ctx.roundRect) {
+      ctx.roundRect(width * 0.15, height * 0.1, width * 0.7, height * 0.8, 16 * scale);
+    } else {
+      ctx.rect(width * 0.15, height * 0.1, width * 0.7, height * 0.8);
+    }
     ctx.fill();
   }
 
   // --- LAYER 2: CUSTOMIZATION OVERLAY (TEXT & GRAPHICS) ---
-  const printLeft = printArea.left * scale;
-  const printTop = printArea.top * scale;
+  const resolvedArea = currentView?.printableArea
+    ? resolvePrintableAreaPixels(currentView.printableArea, VIRTUAL_STAGE_WIDTH, VIRTUAL_STAGE_HEIGHT)
+    : {
+        x: explicitPrintArea?.left ?? 135,
+        y: explicitPrintArea?.top ?? 110,
+        width: explicitPrintArea?.width ?? 230,
+        height: explicitPrintArea?.height ?? 310,
+        safeMargin: explicitPrintArea?.safeMargin ?? 14,
+        shape: explicitPrintArea?.shape ?? 'rectangle',
+        borderRadius: explicitPrintArea?.borderRadius ?? 0,
+      };
+
+  const printLeft = (explicitPrintArea ? explicitPrintArea.left : resolvedArea.x) * scale;
+  const printTop = (explicitPrintArea ? explicitPrintArea.top : resolvedArea.y) * scale;
 
   // Filter visible elements
   const visibleElements = elements.filter((el) => el.visible !== false);

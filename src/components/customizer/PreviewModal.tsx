@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Download, ShoppingBag, Eye, CheckCircle2 } from 'lucide-react';
-import { DesignSide, Product, ProductColor, Size } from '../../types';
+import { DesignSide, Product, ProductColor, ProductCustomizationView, Size } from '../../types';
 
 interface PreviewModalProps {
   isOpen: boolean;
@@ -8,8 +8,11 @@ interface PreviewModalProps {
   product: Product | null;
   selectedColor: ProductColor;
   selectedSize: Size;
-  previewFrontUrl: string;
-  previewBackUrl: string;
+  previewFrontUrl?: string;
+  previewBackUrl?: string;
+  views?: ProductCustomizationView[];
+  previewsByView?: Record<string, string>;
+  activeViewId?: string;
   onAddToCart: () => void;
   totalPrice: number;
 }
@@ -20,26 +23,63 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
   product,
   selectedColor,
   selectedSize,
-  previewFrontUrl,
-  previewBackUrl,
+  previewFrontUrl = '',
+  previewBackUrl = '',
+  views,
+  previewsByView = {},
+  activeViewId: initialActiveViewId,
   onAddToCart,
   totalPrice,
 }) => {
-  const [activeSide, setActiveSide] = useState<DesignSide>('front');
+  const effectiveViews: { id: string; name: string; previewUrl: string }[] = React.useMemo(() => {
+    if (views && views.length > 0) {
+      return views.map((v) => {
+        const pUrl =
+          previewsByView[v.id] ||
+          (v.id === 'front' ? previewFrontUrl : v.id === 'back' ? previewBackUrl : '') ||
+          v.mockupUrl ||
+          product?.image ||
+          '';
+        return {
+          id: v.id,
+          name: v.name,
+          previewUrl: pUrl,
+        };
+      });
+    }
+
+    // Fallback for legacy 2-side setup
+    return [
+      {
+        id: 'front',
+        name: 'Front View',
+        previewUrl: previewFrontUrl || product?.image || '',
+      },
+      {
+        id: 'back',
+        name: 'Back View',
+        previewUrl: previewBackUrl || previewFrontUrl || product?.image || '',
+      },
+    ];
+  }, [views, previewsByView, previewFrontUrl, previewBackUrl, product]);
+
+  const [activeSide, setActiveSide] = useState<string>(() => {
+    if (initialActiveViewId && effectiveViews.some((v) => v.id === initialActiveViewId)) {
+      return initialActiveViewId;
+    }
+    return effectiveViews[0]?.id || 'front';
+  });
 
   if (!isOpen) return null;
 
-  const sideMockup = product?.mockupImages?.find((m) => m.side === activeSide)?.url;
-  const currentPreviewUrl =
-    activeSide === 'front'
-      ? previewFrontUrl || sideMockup || product?.image || ''
-      : previewBackUrl || sideMockup || previewFrontUrl || product?.image || '';
+  const currentViewObj = effectiveViews.find((v) => v.id === activeSide) || effectiveViews[0];
+  const currentPreviewUrl = currentViewObj?.previewUrl || '';
 
   const handleDownloadSnapshot = () => {
     if (!currentPreviewUrl) return;
     const a = document.createElement('a');
     a.href = currentPreviewUrl;
-    a.download = `${product?.slug || 'custom-design'}-${activeSide}-preview.png`;
+    a.download = `${product?.name?.toLowerCase().replace(/\s+/g, '-') || 'custom-product'}-${activeSide}-preview.png`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -57,36 +97,38 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 z-20 w-9 h-9 rounded-full bg-white/90 hover:bg-white text-[#1a1c1c] flex items-center justify-center shadow-md transition-colors"
+          className="absolute top-4 right-4 z-20 w-9 h-9 rounded-full bg-white/90 hover:bg-white text-[#1a1c1c] flex items-center justify-center shadow-md transition-colors cursor-pointer"
         >
           <X className="w-4 h-4" />
         </button>
 
         {/* Left Side: Large Clean Product Preview Stage */}
         <div className="flex-1 bg-[#f8fafc] p-6 flex flex-col items-center justify-between border-b md:border-b-0 md:border-r border-[#e2e8f0]">
-          {/* Side Switcher Pill */}
-          <div className="flex items-center gap-1.5 p-1 bg-white rounded-full border border-[#dce2ee] shadow-xs">
-            <button
-              onClick={() => setActiveSide('front')}
-              className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${
-                activeSide === 'front'
-                  ? 'bg-[#0058be] text-white shadow-xs'
-                  : 'text-[#555f6f] hover:text-[#1a1c1c]'
-              }`}
-            >
-              Front View
-            </button>
-            <button
-              onClick={() => setActiveSide('back')}
-              className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${
-                activeSide === 'back'
-                  ? 'bg-[#0058be] text-white shadow-xs'
-                  : 'text-[#555f6f] hover:text-[#1a1c1c]'
-              }`}
-            >
-              Back View
-            </button>
-          </div>
+          {/* Surface Switcher Pill (Dynamic based on product views) */}
+          {effectiveViews.length > 1 ? (
+            <div className="flex flex-wrap items-center justify-center gap-1.5 p-1 bg-white rounded-full border border-[#dce2ee] shadow-xs">
+              {effectiveViews.map((v) => {
+                const isActive = activeSide === v.id;
+                return (
+                  <button
+                    key={v.id}
+                    onClick={() => setActiveSide(v.id)}
+                    className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                      isActive
+                        ? 'bg-[#0058be] text-white shadow-xs'
+                        : 'text-[#555f6f] hover:text-[#1a1c1c]'
+                    }`}
+                  >
+                    {v.name}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-xs font-semibold text-[#555f6f] uppercase tracking-wider bg-white px-3 py-1 rounded-full border border-[#e2e8f0]">
+              {effectiveViews[0]?.name || 'Preview'}
+            </div>
+          )}
 
           {/* Rendered Mockup Image */}
           <div className="w-full max-w-sm aspect-square flex items-center justify-center my-4 relative">
@@ -107,7 +149,7 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
           {/* Download Snapshot Button */}
           <button
             onClick={handleDownloadSnapshot}
-            className="flex items-center gap-1.5 text-xs font-semibold text-[#0058be] hover:text-[#2170e4] bg-white px-3 py-1.5 rounded-xl border border-[#dce2ee] shadow-xs hover:shadow transition-all"
+            className="flex items-center gap-1.5 text-xs font-semibold text-[#0058be] hover:text-[#2170e4] bg-white px-3 py-1.5 rounded-xl border border-[#dce2ee] shadow-xs hover:shadow transition-all cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Download High-Res Preview</span>
@@ -124,10 +166,10 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
 
             <div>
               <h3 className="font-['Montserrat'] font-bold text-lg text-[#1a1c1c]">
-                {product?.name || 'Custom Apparel'}
+                {product?.name || 'Custom Product'}
               </h3>
               <p className="text-xs text-[#555f6f] mt-0.5">
-                {product?.categoryName || 'Print-on-Demand'}
+                {product?.categoryName || 'Custom Print-On-Demand'}
               </p>
             </div>
 
@@ -144,14 +186,18 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
                 </span>
               </div>
 
-              <div className="flex justify-between items-center">
-                <span className="text-[#727785]">Size:</span>
-                <span className="font-semibold text-[#1a1c1c]">{selectedSize}</span>
-              </div>
+              {selectedSize && (
+                <div className="flex justify-between items-center">
+                  <span className="text-[#727785]">Size / Option:</span>
+                  <span className="font-semibold text-[#1a1c1c]">{selectedSize}</span>
+                </div>
+              )}
 
               <div className="flex justify-between items-center">
-                <span className="text-[#727785]">Print Technology:</span>
-                <span className="font-semibold text-[#1a1c1c]">Direct-to-Garment</span>
+                <span className="text-[#727785]">Custom Surfaces:</span>
+                <span className="font-semibold text-[#1a1c1c]">
+                  {effectiveViews.length} {effectiveViews.length === 1 ? 'View' : 'Views'}
+                </span>
               </div>
 
               <div className="flex justify-between items-center pt-2 border-t border-[#e2e8f0]">
@@ -177,7 +223,7 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
 
             <button
               onClick={onClose}
-              className="w-full py-2 px-4 rounded-xl bg-gray-100 hover:bg-gray-200 text-xs font-semibold text-[#1a1c1c] transition-colors"
+              className="w-full py-2 px-4 rounded-xl bg-gray-100 hover:bg-gray-200 text-xs font-semibold text-[#1a1c1c] transition-colors cursor-pointer"
             >
               Continue Editing
             </button>
@@ -187,3 +233,4 @@ export const PreviewModal: React.FC<PreviewModalProps> = ({
     </div>
   );
 };
+

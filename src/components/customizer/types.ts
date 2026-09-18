@@ -1,11 +1,22 @@
-import { DesignElement, DesignSide, Product, ProductColor, Size } from '../../types';
+import {
+  DesignElement,
+  DesignSide,
+  Product,
+  ProductColor,
+  ProductCustomizationView,
+  PrintableAreaShape,
+  Size,
+} from '../../types';
+import {
+  getEffectiveCustomizationConfig,
+  resolvePrintableAreaPixels,
+  VIRTUAL_STAGE_WIDTH,
+  VIRTUAL_STAGE_HEIGHT,
+} from '../../utils/customizationEngine';
 
 export interface EditorHistoryState {
-  sides: {
-    front: { elements: DesignElement[] };
-    back: { elements: DesignElement[] };
-  };
-  activeSide: DesignSide;
+  views: Record<string, { elements: DesignElement[] }>;
+  activeSide: string;
 }
 
 export interface PrintableAreaConfig {
@@ -14,6 +25,8 @@ export interface PrintableAreaConfig {
   top: number; // offset from mockup top (e.g., 110)
   left: number; // offset from mockup left (e.g., 110)
   safeMargin: number; // safe-zone margin (e.g., 14)
+  shape?: PrintableAreaShape;
+  borderRadius?: number;
 }
 
 export const FONT_OPTIONS = [
@@ -89,67 +102,42 @@ export const SAMPLE_CLIPART: ClipartItem[] = [
 ];
 
 /**
- * Returns printable area bounds configured per product category
+ * Returns printable area bounds configured dynamically from the product's customization configuration.
+ * Fully data-driven: no hardcoded product-type branches.
  */
-export function getProductPrintArea(product?: Product | null, side: DesignSide = 'front'): PrintableAreaConfig {
-  const cat = typeof product?.category === 'object' ? product.category.slug : (product?.categoryName || product?.category || '').toLowerCase();
+export function getProductPrintArea(
+  product?: Product | null,
+  side: DesignSide = 'front'
+): PrintableAreaConfig {
+  const config = getEffectiveCustomizationConfig(product);
+  const targetView =
+    config.views.find((v) => v.id === side) ||
+    config.views[0];
 
-  if (cat.includes('drinkware') || cat.includes('mug')) {
+  if (!targetView || !targetView.printableArea) {
     return {
-      width: 220,
-      height: 240,
-      top: 140,
-      left: 140,
-      safeMargin: 12,
-    };
-  }
-
-  if (cat.includes('tote') || cat.includes('bag')) {
-    return {
-      width: 240,
-      height: 260,
-      top: 150,
-      left: 130,
-      safeMargin: 15,
-    };
-  }
-
-  if (cat.includes('hat') || cat.includes('headwear')) {
-    return {
-      width: 180,
-      height: 120,
-      top: 190,
-      left: 160,
-      safeMargin: 10,
-    };
-  }
-
-  if (cat.includes('stationery') || cat.includes('poster') || cat.includes('canvas')) {
-    return {
-      width: 260,
-      height: 360,
-      top: 70,
-      left: 120,
-      safeMargin: 15,
-    };
-  }
-
-  // Default Apparel (T-Shirts, Hoodies, Sweatshirts)
-  if (side === 'back') {
-    return {
-      width: 240,
-      height: 330,
-      top: 90,
-      left: 130,
+      width: 230,
+      height: 310,
+      top: 110,
+      left: 135,
       safeMargin: 14,
+      shape: 'rectangle',
     };
   }
+
+  const resolved = resolvePrintableAreaPixels(
+    targetView.printableArea,
+    VIRTUAL_STAGE_WIDTH,
+    VIRTUAL_STAGE_HEIGHT
+  );
 
   return {
-    width: 230,
-    height: 310,
-    top: 110,
-    left: 135,
-    safeMargin: 14,
+    width: resolved.width,
+    height: resolved.height,
+    top: resolved.y,
+    left: resolved.x,
+    safeMargin: resolved.safeMargin,
+    shape: resolved.shape,
+    borderRadius: resolved.borderRadius,
   };
 }

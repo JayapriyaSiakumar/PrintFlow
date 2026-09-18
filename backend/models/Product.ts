@@ -31,6 +31,7 @@ export interface IProduct extends Document {
   rating: number;
   reviewsCount: number;
   featured: boolean;
+  customizationConfig?: any;
   details?: IProductDetails;
   createdAt: Date;
   updatedAt: Date;
@@ -133,6 +134,9 @@ const productSchema = new Schema<IProduct>(
     featured: {
       type: Boolean,
       default: false,
+    },
+    customizationConfig: {
+      type: Schema.Types.Mixed,
     },
     details: {
       type: productDetailsSchema,

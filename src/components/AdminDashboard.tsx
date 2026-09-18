@@ -1,10 +1,24 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { api } from '../services/api';
-import { User, Product, Order, CustomDesign, AdminDashboardStats, Category } from '../types';
+import { User, Product, Order, CustomDesign, AdminDashboardStats, Category, GenericCustomizationConfig, ProductColor } from '../types';
 import { CategoryManagement } from './admin/CategoryManagement';
 import { OrderDesignViewerModal } from './admin/OrderDesignViewerModal';
 import { CloudinaryImageUploader } from './admin/CloudinaryImageUploader';
+import { CustomizationConfigEditor } from './admin/CustomizationConfigEditor';
+
+const POPULAR_COLOR_PRESETS = [
+  { name: 'Clean White', hex: '#ffffff' },
+  { name: 'Onyx Black', hex: '#111111' },
+  { name: 'Heather Grey', hex: '#9ca3af' },
+  { name: 'Navy Blue', hex: '#1e3a8a' },
+  { name: 'Crimson Red', hex: '#dc2626' },
+  { name: 'Forest Green', hex: '#15803d' },
+  { name: 'Royal Blue', hex: '#2563eb' },
+  { name: 'Dusty Rose', hex: '#f43f5e' },
+  { name: 'Warm Beige', hex: '#d4b996' },
+  { name: 'Olive Green', hex: '#556b2f' },
+];
 import {
   Shield,
   Users,
@@ -39,6 +53,7 @@ export const AdminDashboard: React.FC = () => {
     setActiveView,
     categories,
     refreshCategories,
+    refreshProducts,
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<
@@ -48,6 +63,22 @@ export const AdminDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // In-UI Confirmation Modals (replaces window.confirm to guarantee reliability inside iframes)
+  const [productToDelete, setProductToDelete] = useState<Product | null>(null);
+  const [isDeletingProduct, setIsDeletingProduct] = useState(false);
+  const [isDeleteAllModalOpen, setIsDeleteAllModalOpen] = useState(false);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
+  const [isLoadingSamples, setIsLoadingSamples] = useState(false);
+
+  const [userToDelete, setUserToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [isDeletingUser, setIsDeletingUser] = useState(false);
+
+  const [orderToDelete, setOrderToDelete] = useState<string | null>(null);
+  const [isDeletingOrder, setIsDeletingOrder] = useState(false);
+
+  const [designToDelete, setDesignToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [isDeletingDesign, setIsDeletingDesign] = useState(false);
 
   // Users State
   const [users, setUsers] = useState<User[]>([]);
@@ -59,18 +90,60 @@ export const AdminDashboard: React.FC = () => {
   const [productSearch, setProductSearch] = useState('');
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  const [productForm, setProductForm] = useState({
+  const [productForm, setProductForm] = useState<{
+    name: string;
+    category: string;
+    price: number;
+    stock: number;
+    spec: string;
+    description: string;
+    image: string;
+    imagePublicId: string;
+    backMockupImage: string;
+    backMockupPublicId: string;
+    colors: ProductColor[];
+    customizationConfig?: GenericCustomizationConfig;
+  }>({
     name: '',
     category: 'Apparel',
     price: 29.99,
     stock: 50,
     spec: 'Standard Fit',
     description: '',
-    image: 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=800&q=80',
+    image: 'https://images.unsplash.com/photo-1581655353564-df123a1eb820?auto=format&fit=crop&w=800&q=80',
     imagePublicId: '',
     backMockupImage: '',
     backMockupPublicId: '',
+    colors: [
+      { name: 'Clean White', hex: '#ffffff', bgClass: 'bg-white' },
+      { name: 'Onyx Black', hex: '#111111', bgClass: 'bg-neutral-900' },
+      { name: 'Heather Grey', hex: '#9ca3af', bgClass: 'bg-slate-400' },
+      { name: 'Navy Blue', hex: '#1e3a8a', bgClass: 'bg-blue-900' },
+    ],
+    customizationConfig: undefined,
   });
+
+  const [newColorName, setNewColorName] = useState('');
+  const [newColorHex, setNewColorHex] = useState('#ffffff');
+
+  const handleAddProductColor = (name: string, hex: string) => {
+    if (!name.trim()) return;
+    const exists = productForm.colors.some(
+      (c) => c.hex.toLowerCase() === hex.toLowerCase() || c.name.toLowerCase() === name.trim().toLowerCase()
+    );
+    if (exists) return;
+    setProductForm((prev) => ({
+      ...prev,
+      colors: [...prev.colors, { name: name.trim(), hex, bgClass: `bg-[${hex}]` }],
+    }));
+  };
+
+  const handleRemoveProductColor = (colorHex: string) => {
+    setProductForm((prev) => ({
+      ...prev,
+      colors: prev.colors.filter((c) => c.hex.toLowerCase() !== colorHex.toLowerCase()),
+    }));
+  };
 
   // Orders State
   const [orders, setOrders] = useState<Order[]>([]);
@@ -169,15 +242,23 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  const handleDeleteUser = async (userId: string, userName: string) => {
-    if (!window.confirm(`Are you sure you want to permanently delete user "${userName}"?`)) return;
+  const handleDeleteUser = (userId: string, userName: string) => {
+    setUserToDelete({ id: userId, name: userName });
+  };
+
+  const handleConfirmDeleteUser = async () => {
+    if (!userToDelete) return;
+    setIsDeletingUser(true);
     try {
-      await api.deleteAdminUser(userId);
-      setUsers((prev) => prev.filter((u) => u.id !== userId));
-      showFeedback('success', `User ${userName} deleted`);
+      await api.deleteAdminUser(userToDelete.id);
+      setUsers((prev) => prev.filter((u) => u.id !== userToDelete.id));
+      showFeedback('success', `User ${userToDelete.name} deleted`);
+      setUserToDelete(null);
       loadAllData();
     } catch (err: any) {
       showFeedback('error', err.message || 'Failed to delete user');
+    } finally {
+      setIsDeletingUser(false);
     }
   };
 
@@ -194,15 +275,55 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  const handleDeleteProduct = async (product: Product) => {
-    if (!window.confirm(`Delete product "${product.name}"?`)) return;
+  const handleDeleteProduct = (product: Product) => {
+    setProductToDelete(product);
+  };
+
+  const handleConfirmDeleteProduct = async () => {
+    if (!productToDelete) return;
+    setIsDeletingProduct(true);
     try {
-      await api.deleteAdminProduct(product.id);
-      setAdminProducts((prev) => prev.filter((p) => p.id !== product.id));
-      showFeedback('success', `Product "${product.name}" deleted`);
+      await api.deleteAdminProduct(productToDelete.id);
+      setAdminProducts((prev) => prev.filter((p) => p.id !== productToDelete.id));
+      showFeedback('success', `Product "${productToDelete.name}" deleted successfully.`);
+      setProductToDelete(null);
+      await refreshProducts();
       loadAllData();
     } catch (err: any) {
       showFeedback('error', err.message || 'Failed to delete product');
+    } finally {
+      setIsDeletingProduct(false);
+    }
+  };
+
+  const handleConfirmDeleteAllProducts = async () => {
+    setIsDeletingAll(true);
+    try {
+      const res = await api.deleteAllAdminProducts();
+      setAdminProducts([]);
+      showFeedback('success', res.message || 'All products have been permanently deleted from catalog');
+      setIsDeleteAllModalOpen(false);
+      await refreshProducts();
+      loadAllData();
+    } catch (err: any) {
+      showFeedback('error', err.message || 'Failed to delete all products');
+    } finally {
+      setIsDeletingAll(false);
+    }
+  };
+
+  const handleLoadSampleProducts = async () => {
+    setIsLoadingSamples(true);
+    try {
+      const res = await api.loadSampleAdminProducts();
+      setAdminProducts(res.products);
+      showFeedback('success', `Successfully loaded ${res.products.length} sample products into catalog.`);
+      await refreshProducts();
+      loadAllData();
+    } catch (err: any) {
+      showFeedback('error', err.message || 'Failed to load sample products');
+    } finally {
+      setIsLoadingSamples(false);
     }
   };
 
@@ -216,15 +337,38 @@ export const AdminDashboard: React.FC = () => {
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      // Build mockups list: integrate both legacy and new generic views
+      let mockups = [
+        { side: 'front', url: productForm.image, publicId: productForm.imagePublicId },
+        ...(productForm.backMockupImage
+          ? [{ side: 'back', url: productForm.backMockupImage, publicId: productForm.backMockupPublicId }]
+          : []),
+      ];
+
+      // If generic customization views exist, populate them into mockupImages array as well
+      if (productForm.customizationConfig?.views && productForm.customizationConfig.views.length > 0) {
+        const viewMockups = productForm.customizationConfig.views
+          .filter((v) => v.mockupUrl)
+          .map((v) => ({
+            side: v.id,
+            url: v.mockupUrl,
+            publicId: v.mockupPublicId || '',
+          }));
+        if (viewMockups.length > 0) {
+          // Merge while keeping unique sides
+          const map = new Map<string, { side: string; url: string; publicId: string }>();
+          mockups.forEach((m) => map.set(m.side, m));
+          viewMockups.forEach((vm) => map.set(vm.side, vm));
+          mockups = Array.from(map.values());
+        }
+      }
+
       const payload: any = {
         ...productForm,
         imagePublicId: productForm.imagePublicId,
-        mockupImages: [
-          { side: 'front', url: productForm.image, publicId: productForm.imagePublicId },
-          ...(productForm.backMockupImage
-            ? [{ side: 'back', url: productForm.backMockupImage, publicId: productForm.backMockupPublicId }]
-            : []),
-        ],
+        mockupImages: mockups,
+        colors: productForm.colors,
+        customizationConfig: productForm.customizationConfig,
       };
 
       if (editingProduct) {
@@ -255,11 +399,18 @@ export const AdminDashboard: React.FC = () => {
       price: 29.99,
       stock: 50,
       spec: 'Premium Ring-Spun Cotton',
-      description: 'High-grade customizable apparel crafted for durability and vibrant prints.',
-      image: 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=800&q=80',
+      description: 'High-grade customizable blank crafted for durability and vibrant prints.',
+      image: 'https://images.unsplash.com/photo-1581655353564-df123a1eb820?auto=format&fit=crop&w=800&q=80',
       imagePublicId: '',
       backMockupImage: '',
       backMockupPublicId: '',
+      colors: [
+        { name: 'Clean White', hex: '#ffffff', bgClass: 'bg-white' },
+        { name: 'Onyx Black', hex: '#111111', bgClass: 'bg-neutral-900' },
+        { name: 'Heather Grey', hex: '#9ca3af', bgClass: 'bg-slate-400' },
+        { name: 'Navy Blue', hex: '#1e3a8a', bgClass: 'bg-blue-900' },
+      ],
+      customizationConfig: undefined,
     });
     setIsProductModalOpen(true);
   };
@@ -285,6 +436,14 @@ export const AdminDashboard: React.FC = () => {
       imagePublicId: product.imagePublicId || frontMockup?.publicId || '',
       backMockupImage: backMockup?.url || '',
       backMockupPublicId: backMockup?.publicId || '',
+      colors:
+        product.colors && product.colors.length > 0
+          ? product.colors
+          : [
+              { name: 'Clean White', hex: '#ffffff', bgClass: 'bg-white' },
+              { name: 'Onyx Black', hex: '#111111', bgClass: 'bg-neutral-900' },
+            ],
+      customizationConfig: product.customizationConfig,
     });
     setIsProductModalOpen(true);
   };
@@ -303,29 +462,45 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  const handleDeleteOrder = async (orderId: string) => {
-    if (!window.confirm(`Permanently delete order #${orderId}?`)) return;
+  const handleDeleteOrder = (orderId: string) => {
+    setOrderToDelete(orderId);
+  };
+
+  const handleConfirmDeleteOrder = async () => {
+    if (!orderToDelete) return;
+    setIsDeletingOrder(true);
     try {
-      await api.deleteAdminOrder(orderId);
-      setOrders((prev) => prev.filter((o) => o.id !== orderId));
-      if (selectedOrder?.id === orderId) setSelectedOrder(null);
-      showFeedback('success', `Order #${orderId} deleted`);
+      await api.deleteAdminOrder(orderToDelete);
+      setOrders((prev) => prev.filter((o) => o.id !== orderToDelete));
+      if (selectedOrder?.id === orderToDelete) setSelectedOrder(null);
+      showFeedback('success', `Order #${orderToDelete} deleted`);
+      setOrderToDelete(null);
       loadAllData();
     } catch (err: any) {
       showFeedback('error', err.message || 'Failed to delete order');
+    } finally {
+      setIsDeletingOrder(false);
     }
   };
 
   // --- Handlers: Designs ---
-  const handleDeleteDesign = async (designId: string, designName: string) => {
-    if (!window.confirm(`Moderate and delete custom design "${designName}"?`)) return;
+  const handleDeleteDesign = (designId: string, designName: string) => {
+    setDesignToDelete({ id: designId, name: designName });
+  };
+
+  const handleConfirmDeleteDesign = async () => {
+    if (!designToDelete) return;
+    setIsDeletingDesign(true);
     try {
-      await api.deleteAdminDesign(designId);
-      setDesigns((prev) => prev.filter((d) => d.id !== designId));
-      showFeedback('success', `Custom design "${designName}" removed`);
+      await api.deleteAdminDesign(designToDelete.id);
+      setDesigns((prev) => prev.filter((d) => d.id !== designToDelete.id));
+      showFeedback('success', `Custom design "${designToDelete.name}" removed`);
+      setDesignToDelete(null);
       loadAllData();
     } catch (err: any) {
       showFeedback('error', err.message || 'Failed to remove design');
+    } finally {
+      setIsDeletingDesign(false);
     }
   };
 
@@ -835,7 +1010,7 @@ export const AdminDashboard: React.FC = () => {
       {/* ================= TAB 3: PRODUCTS CATALOG ================= */}
       {activeTab === 'products' && (
         <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
+          <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
             <div className="relative w-full sm:w-80">
               <Search className="w-4 h-4 text-[#727785] absolute left-3 top-1/2 -translate-y-1/2" />
               <input
@@ -847,75 +1022,139 @@ export const AdminDashboard: React.FC = () => {
               />
             </div>
 
-            <button
-              onClick={openNewProductModal}
-              id="btn-admin-add-product"
-              className="w-full sm:w-auto px-4 py-2 bg-[#6b38d4] hover:bg-[#582db5] text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-sm transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add New Product</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {adminProducts.length > 0 && (
+                <button
+                  onClick={() => setIsDeleteAllModalOpen(true)}
+                  id="btn-admin-delete-all-products"
+                  className="px-3 py-2 bg-red-50 hover:bg-red-100 text-[#ba1a1a] border border-red-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  title="Remove all products from catalog"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete All Products</span>
+                </button>
+              )}
+
+              {adminProducts.length === 0 && (
+                <button
+                  onClick={handleLoadSampleProducts}
+                  disabled={isLoadingSamples}
+                  className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                  title="Load sample blanks"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingSamples ? 'animate-spin' : ''}`} />
+                  <span>{isLoadingSamples ? 'Loading...' : 'Load Sample Products'}</span>
+                </button>
+              )}
+
+              <button
+                onClick={openNewProductModal}
+                id="btn-admin-add-product"
+                className="px-4 py-2 bg-[#6b38d4] hover:bg-[#582db5] text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add New Product</span>
+              </button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredProducts.map((prod) => (
-              <div
-                key={prod.id}
-                className="bg-white rounded-2xl p-4 border border-[#e2e2e2] shadow-xs flex flex-col justify-between space-y-3"
-              >
-                <div className="flex gap-3">
-                  <img
-                    src={prod.image}
-                    alt={prod.name}
-                    className="w-20 h-24 object-cover rounded-xl bg-[#eeeeee]"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-[10px] font-bold text-[#0058be] uppercase tracking-wider">
-                        {typeof prod.category === 'object' ? prod.category.name : (prod.categoryName || prod.category)}
-                      </span>
-                    </div>
-                    <h4 className="font-bold text-sm text-[#1a1c1c] truncate mt-0.5">{prod.name}</h4>
-                    <p className="text-xs font-bold text-[#1a1c1c] mt-1">${prod.price.toFixed(2)}</p>
-                    <div className="flex items-center gap-2 mt-2">
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          prod.stock > 0
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-red-100 text-[#ba1a1a]'
-                        }`}
-                      >
-                        {prod.stock > 0 ? `In Stock (${prod.stock})` : 'Out of Stock'}
-                      </span>
+          {/* Empty Catalog State */}
+          {adminProducts.length === 0 ? (
+            <div className="p-12 text-center bg-white rounded-2xl border border-dashed border-[#c2c6d6] space-y-4">
+              <div className="w-14 h-14 rounded-2xl bg-purple-50 flex items-center justify-center mx-auto text-purple-600">
+                <Layers className="w-7 h-7" />
+              </div>
+              <div>
+                <h3 className="font-['Montserrat'] font-bold text-base text-[#1a1c1c]">
+                  Product Catalog is Empty
+                </h3>
+                <p className="font-['Inter'] text-xs text-[#555f6f] mt-1 max-w-md mx-auto">
+                  All products have been removed as requested. You can start creating your own custom products with customized print areas and colors, or restore default sample blanks at any time.
+                </p>
+              </div>
+              <div className="flex items-center justify-center gap-3 pt-2">
+                <button
+                  onClick={openNewProductModal}
+                  className="px-4 py-2.5 bg-[#6b38d4] hover:bg-[#582db5] text-white rounded-xl text-xs font-semibold flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Create First Product</span>
+                </button>
+                <button
+                  onClick={handleLoadSampleProducts}
+                  disabled={isLoadingSamples}
+                  className="px-4 py-2.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-xl text-xs font-semibold flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingSamples ? 'animate-spin' : ''}`} />
+                  <span>Load Sample Blanks</span>
+                </button>
+              </div>
+            </div>
+          ) : filteredProducts.length === 0 ? (
+            <div className="p-8 text-center bg-white rounded-2xl border border-dashed border-[#c2c6d6]">
+              <p className="text-xs text-[#555f6f]">No products found matching "{productSearch}".</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredProducts.map((prod) => (
+                <div
+                  key={prod.id}
+                  className="bg-white rounded-2xl p-4 border border-[#e2e2e2] shadow-xs flex flex-col justify-between space-y-3"
+                >
+                  <div className="flex gap-3">
+                    <img
+                      src={prod.image}
+                      alt={prod.name}
+                      className="w-20 h-24 object-cover rounded-xl bg-[#eeeeee]"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] font-bold text-[#0058be] uppercase tracking-wider">
+                          {typeof prod.category === 'object' ? prod.category.name : (prod.categoryName || prod.category)}
+                        </span>
+                      </div>
+                      <h4 className="font-bold text-sm text-[#1a1c1c] truncate mt-0.5">{prod.name}</h4>
+                      <p className="text-xs font-bold text-[#1a1c1c] mt-1">${prod.price.toFixed(2)}</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            prod.stock > 0
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-red-100 text-[#ba1a1a]'
+                          }`}
+                        >
+                          {prod.stock > 0 ? `In Stock (${prod.stock})` : 'Out of Stock'}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="flex items-center gap-2 pt-2 border-t border-[#eeeeee]">
-                  <button
-                    onClick={() => handleToggleStock(prod)}
-                    className="flex-1 py-1.5 px-2 bg-[#eeeeee] hover:bg-[#e2e2e2] text-[#1a1c1c] rounded-lg text-xs font-semibold transition-colors"
-                  >
-                    {prod.stock > 0 ? 'Set Out of Stock' : 'Restock'}
-                  </button>
-                  <button
-                    onClick={() => openEditProductModal(prod)}
-                    className="p-2 text-[#555f6f] hover:bg-[#eeeeee] rounded-lg transition-colors"
-                    title="Edit Product"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => handleDeleteProduct(prod)}
-                    className="p-2 text-[#ba1a1a] hover:bg-red-50 rounded-lg transition-colors"
-                    title="Delete Product"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="flex items-center gap-2 pt-2 border-t border-[#eeeeee]">
+                    <button
+                      onClick={() => handleToggleStock(prod)}
+                      className="flex-1 py-1.5 px-2 bg-[#eeeeee] hover:bg-[#e2e2e2] text-[#1a1c1c] rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                    >
+                      {prod.stock > 0 ? 'Set Out of Stock' : 'Restock'}
+                    </button>
+                    <button
+                      onClick={() => openEditProductModal(prod)}
+                      className="p-2 text-[#555f6f] hover:bg-[#eeeeee] rounded-lg transition-colors cursor-pointer"
+                      title="Edit Product"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteProduct(prod)}
+                      className="p-2 text-[#ba1a1a] hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                      title="Delete Product"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -1163,21 +1402,26 @@ export const AdminDashboard: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-2xl shadow-2xl border border-[#e2e2e2] w-full max-w-lg overflow-hidden"
+            className="bg-white rounded-2xl shadow-2xl border border-[#e2e2e2] w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden"
           >
-            <div className="p-6 bg-[#f9f9f9] border-b border-[#eeeeee] flex items-center justify-between">
-              <h3 className="font-['Montserrat'] font-bold text-lg text-[#1a1c1c]">
-                {editingProduct ? 'Edit Catalog Product' : 'Add New Catalog Product'}
-              </h3>
+            <div className="p-5 sm:p-6 bg-[#f9f9f9] border-b border-[#eeeeee] flex items-center justify-between shrink-0">
+              <div>
+                <h3 className="font-['Montserrat'] font-bold text-lg text-[#1a1c1c]">
+                  {editingProduct ? 'Edit Catalog Product' : 'Add New Catalog Product'}
+                </h3>
+                <p className="text-xs text-[#555f6f]">
+                  Configure core product catalog details and generic personalization surfaces
+                </p>
+              </div>
               <button
                 onClick={() => setIsProductModalOpen(false)}
-                className="w-8 h-8 rounded-full bg-[#eeeeee] flex items-center justify-center hover:bg-[#e2e2e2]"
+                className="w-8 h-8 rounded-full bg-[#eeeeee] flex items-center justify-center hover:bg-[#e2e2e2] transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveProduct} className="p-6 space-y-3.5">
+            <form onSubmit={handleSaveProduct} className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1">
               <div>
                 <label className="text-xs font-bold text-[#1a1c1c] block mb-1">Product Name</label>
                 <input
@@ -1185,7 +1429,7 @@ export const AdminDashboard: React.FC = () => {
                   required
                   value={productForm.name}
                   onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
-                  className="w-full px-3 py-2 bg-[#f9f9f9] border border-[#e2e2e2] rounded-xl text-xs"
+                  className="w-full px-3 py-2 bg-[#f9f9f9] border border-[#e2e2e2] rounded-xl text-xs focus:ring-2 focus:ring-purple-600 focus:outline-none"
                 />
               </div>
 
@@ -1194,7 +1438,7 @@ export const AdminDashboard: React.FC = () => {
                 <select
                   value={productForm.category}
                   onChange={(e) => handleProductCategoryChange(e.target.value)}
-                  className="w-full px-3 py-2 bg-[#f9f9f9] border border-[#e2e2e2] rounded-xl text-xs font-medium text-[#1a1c1c]"
+                  className="w-full px-3 py-2 bg-[#f9f9f9] border border-[#e2e2e2] rounded-xl text-xs font-medium text-[#1a1c1c] focus:ring-2 focus:ring-purple-600 focus:outline-none"
                 >
                   {categories.length > 0 ? (
                     categories.map((cat) => (
@@ -1222,7 +1466,7 @@ export const AdminDashboard: React.FC = () => {
                     required
                     value={productForm.price}
                     onChange={(e) => setProductForm({ ...productForm, price: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 bg-[#f9f9f9] border border-[#e2e2e2] rounded-xl text-xs"
+                    className="w-full px-3 py-2 bg-[#f9f9f9] border border-[#e2e2e2] rounded-xl text-xs focus:ring-2 focus:ring-purple-600 focus:outline-none"
                   />
                 </div>
                 <div>
@@ -1232,7 +1476,7 @@ export const AdminDashboard: React.FC = () => {
                     required
                     value={productForm.stock}
                     onChange={(e) => setProductForm({ ...productForm, stock: parseInt(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 bg-[#f9f9f9] border border-[#e2e2e2] rounded-xl text-xs"
+                    className="w-full px-3 py-2 bg-[#f9f9f9] border border-[#e2e2e2] rounded-xl text-xs focus:ring-2 focus:ring-purple-600 focus:outline-none"
                   />
                 </div>
               </div>
@@ -1243,32 +1487,143 @@ export const AdminDashboard: React.FC = () => {
                   type="text"
                   value={productForm.spec}
                   onChange={(e) => setProductForm({ ...productForm, spec: e.target.value })}
-                  className="w-full px-3 py-2 bg-[#f9f9f9] border border-[#e2e2e2] rounded-xl text-xs"
+                  className="w-full px-3 py-2 bg-[#f9f9f9] border border-[#e2e2e2] rounded-xl text-xs focus:ring-2 focus:ring-purple-600 focus:outline-none"
                 />
               </div>
 
               <CloudinaryImageUploader
-                label="Product Base Image (Front Mockup)"
+                label="Product Base Image (Primary Mockup) - Product Only"
                 value={productForm.image}
                 publicId={productForm.imagePublicId}
                 onChange={(url, publicId) =>
                   setProductForm({ ...productForm, image: url, imagePublicId: publicId || '' })
                 }
                 uploadEndpoint="/api/upload/product"
-                helperText="Primary front mockup image (Layer 1 base in designer)"
+                helperText="Product only (no faces, people, or background). Front angle flat lay or isolated studio product."
                 required
               />
 
               <CloudinaryImageUploader
-                label="Back Mockup Image (Optional)"
+                label="Secondary Angle Mockup Image (Optional) - Product Only"
                 value={productForm.backMockupImage}
                 publicId={productForm.backMockupPublicId}
                 onChange={(url, publicId) =>
                   setProductForm({ ...productForm, backMockupImage: url, backMockupPublicId: publicId || '' })
                 }
                 uploadEndpoint="/api/upload/mockup"
-                helperText="Back angle mockup image (Layer 1 base when customizing back)"
+                helperText="Product only. Rear or back angle blank mockup."
               />
+
+              {/* Product Colors Management */}
+              <div className="p-4 bg-white border border-[#e2e8f0] rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-xs font-bold text-[#1a1c1c] block">
+                      Product Blank Colors ({productForm.colors?.length || 0})
+                    </label>
+                    <span className="text-[11px] text-[#555f6f]">
+                      Add the color variants available for this product. Customers can preview the blank product in each selected color.
+                    </span>
+                  </div>
+                </div>
+
+                {/* Current color swatches list */}
+                <div className="flex flex-wrap gap-2">
+                  {productForm.colors?.map((col) => (
+                    <div
+                      key={col.hex}
+                      className="flex items-center gap-2 px-2.5 py-1.5 bg-[#f8f9fa] border border-[#e2e8f0] rounded-xl text-xs font-medium text-[#1a1c1c] shadow-2xs"
+                    >
+                      <span
+                        className="w-4 h-4 rounded-full border border-black/10 shrink-0"
+                        style={{ backgroundColor: col.hex }}
+                      />
+                      <span>{col.name}</span>
+                      <span className="text-[10px] font-mono text-slate-400 uppercase">{col.hex}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveProductColor(col.hex)}
+                        className="text-slate-400 hover:text-red-600 p-0.5 rounded transition-colors cursor-pointer"
+                        title={`Remove ${col.name}`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Quick Add Preset Colors */}
+                <div className="pt-2 border-t border-[#f0f0f0]">
+                  <span className="text-[11px] font-bold text-[#555f6f] block mb-1.5">
+                    ⚡ Quick Add Popular Colors:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {POPULAR_COLOR_PRESETS.map((p) => {
+                      const isAdded = productForm.colors?.some((c) => c.hex.toLowerCase() === p.hex.toLowerCase());
+                      return (
+                        <button
+                          key={p.hex}
+                          type="button"
+                          disabled={isAdded}
+                          onClick={() => handleAddProductColor(p.name, p.hex)}
+                          className={`px-2 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
+                            isAdded
+                              ? 'opacity-40 bg-gray-100 text-gray-400 cursor-not-allowed'
+                              : 'bg-white border border-slate-200 hover:border-purple-300 hover:bg-purple-50 text-[#1a1c1c]'
+                          }`}
+                        >
+                          <span
+                            className="w-3 h-3 rounded-full border border-black/15 shrink-0"
+                            style={{ backgroundColor: p.hex }}
+                          />
+                          <span>{p.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Custom Color Creator */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={newColorHex}
+                      onChange={(e) => setNewColorHex(e.target.value)}
+                      className="w-8 h-8 rounded-lg border border-slate-300 p-0.5 cursor-pointer"
+                      title="Choose color"
+                    />
+                    <input
+                      type="text"
+                      value={newColorHex}
+                      onChange={(e) => setNewColorHex(e.target.value)}
+                      placeholder="#ffffff"
+                      className="w-20 px-2 py-1.5 bg-[#f9f9f9] border border-[#e2e2e2] rounded-lg text-xs font-mono"
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    value={newColorName}
+                    onChange={(e) => setNewColorName(e.target.value)}
+                    placeholder="Color Name (e.g. Sage Green, Lavender)"
+                    className="flex-1 px-3 py-1.5 bg-[#f9f9f9] border border-[#e2e2e2] rounded-lg text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (newColorName.trim()) {
+                        handleAddProductColor(newColorName.trim(), newColorHex);
+                        setNewColorName('');
+                      }
+                    }}
+                    disabled={!newColorName.trim()}
+                    className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Color</span>
+                  </button>
+                </div>
+              </div>
 
               <div>
                 <label className="text-xs font-bold text-[#1a1c1c] block mb-1">Description</label>
@@ -1276,26 +1631,305 @@ export const AdminDashboard: React.FC = () => {
                   rows={3}
                   value={productForm.description}
                   onChange={(e) => setProductForm({ ...productForm, description: e.target.value })}
-                  className="w-full px-3 py-2 bg-[#f9f9f9] border border-[#e2e2e2] rounded-xl text-xs"
+                  className="w-full px-3 py-2 bg-[#f9f9f9] border border-[#e2e2e2] rounded-xl text-xs focus:ring-2 focus:ring-purple-600 focus:outline-none"
                 />
               </div>
 
-              <div className="flex gap-2 pt-3 border-t border-[#eeeeee]">
+              {/* Data-Driven Personalization Config Editor */}
+              <div className="pt-2">
+                <CustomizationConfigEditor
+                  value={productForm.customizationConfig}
+                  onChange={(cfg) => setProductForm((prev) => ({ ...prev, customizationConfig: cfg }))}
+                  defaultMockupUrl={productForm.image}
+                  defaultBackMockupUrl={productForm.backMockupImage}
+                  productCategory={productForm.category}
+                />
+              </div>
+
+              <div className="flex gap-2 pt-4 border-t border-[#eeeeee]">
                 <button
                   type="button"
                   onClick={() => setIsProductModalOpen(false)}
-                  className="flex-1 py-2 rounded-xl bg-[#eeeeee] hover:bg-[#e2e2e2] text-[#1a1c1c] text-xs font-semibold"
+                  className="flex-1 py-2.5 rounded-xl bg-[#eeeeee] hover:bg-[#e2e2e2] text-[#1a1c1c] text-xs font-semibold transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2 rounded-xl bg-[#6b38d4] hover:bg-[#582db5] text-white text-xs font-semibold"
+                  className="flex-1 py-2.5 rounded-xl bg-[#6b38d4] hover:bg-[#582db5] text-white text-xs font-semibold shadow-sm transition-colors cursor-pointer"
                 >
                   {editingProduct ? 'Save Changes' : 'Create Product'}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Single Product Delete Confirmation Modal */}
+      {productToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-[#e2e2e2] space-y-4">
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center text-red-600 shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-['Montserrat'] font-bold text-base text-[#1a1c1c]">
+                  Delete Product?
+                </h3>
+                <p className="font-['Inter'] text-xs text-[#555f6f] mt-1">
+                  Are you sure you want to permanently delete <strong className="text-[#1a1c1c]">"{productToDelete.name}"</strong>? This will remove this item from your catalog and customer storefront.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-[#f9f9f9] rounded-xl flex items-center gap-3 border border-[#eeeeee]">
+              <img
+                src={productToDelete.image}
+                alt={productToDelete.name}
+                className="w-12 h-12 rounded-lg object-cover bg-white"
+              />
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold text-xs text-[#1a1c1c] truncate">{productToDelete.name}</div>
+                <div className="text-[11px] text-[#727785]">
+                  ${productToDelete.price.toFixed(2)} • Stock: {productToDelete.stock}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#eeeeee]">
+              <button
+                type="button"
+                onClick={() => setProductToDelete(null)}
+                disabled={isDeletingProduct}
+                className="px-4 py-2 text-xs font-semibold text-[#555f6f] hover:bg-[#eeeeee] rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteProduct}
+                disabled={isDeletingProduct}
+                className="px-4 py-2 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-xl transition-colors flex items-center gap-2 shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                {isDeletingProduct ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Product</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Delete All Products Confirmation Modal */}
+      {isDeleteAllModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-[#e2e2e2] space-y-4">
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center text-red-600 shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-['Montserrat'] font-bold text-base text-[#1a1c1c]">
+                  Delete All Products?
+                </h3>
+                <p className="font-['Inter'] text-xs text-[#555f6f] mt-1">
+                  Are you sure you want to remove <strong>all {adminProducts.length} products</strong> from your catalog? This will completely clear your product list and store inventory.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-red-50 text-red-800 text-xs rounded-xl border border-red-200">
+              ⚠️ Warning: This action cannot be undone. You can restore sample blanks or create new products afterwards.
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#eeeeee]">
+              <button
+                type="button"
+                onClick={() => setIsDeleteAllModalOpen(false)}
+                disabled={isDeletingAll}
+                className="px-4 py-2 text-xs font-semibold text-[#555f6f] hover:bg-[#eeeeee] rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteAllProducts}
+                disabled={isDeletingAll}
+                className="px-4 py-2 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-xl transition-colors flex items-center gap-2 shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                {isDeletingAll ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Removing all...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Yes, Remove All Products</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* User Delete Confirmation Modal */}
+      {userToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-[#e2e2e2] space-y-4">
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center text-red-600 shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-['Montserrat'] font-bold text-base text-[#1a1c1c]">
+                  Delete User Account?
+                </h3>
+                <p className="font-['Inter'] text-xs text-[#555f6f] mt-1">
+                  Are you sure you want to permanently delete user <strong className="text-[#1a1c1c]">"{userToDelete.name}"</strong>?
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#eeeeee]">
+              <button
+                type="button"
+                onClick={() => setUserToDelete(null)}
+                disabled={isDeletingUser}
+                className="px-4 py-2 text-xs font-semibold text-[#555f6f] hover:bg-[#eeeeee] rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteUser}
+                disabled={isDeletingUser}
+                className="px-4 py-2 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-xl transition-colors flex items-center gap-2 shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                {isDeletingUser ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete User</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Order Delete Confirmation Modal */}
+      {orderToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-[#e2e2e2] space-y-4">
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center text-red-600 shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-['Montserrat'] font-bold text-base text-[#1a1c1c]">
+                  Delete Order Record?
+                </h3>
+                <p className="font-['Inter'] text-xs text-[#555f6f] mt-1">
+                  Are you sure you want to delete order <strong className="text-[#1a1c1c]">#{orderToDelete}</strong>?
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#eeeeee]">
+              <button
+                type="button"
+                onClick={() => setOrderToDelete(null)}
+                disabled={isDeletingOrder}
+                className="px-4 py-2 text-xs font-semibold text-[#555f6f] hover:bg-[#eeeeee] rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteOrder}
+                disabled={isDeletingOrder}
+                className="px-4 py-2 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-xl transition-colors flex items-center gap-2 shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                {isDeletingOrder ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Order</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Design Moderation Delete Confirmation Modal */}
+      {designToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-[#e2e2e2] space-y-4">
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center text-red-600 shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-['Montserrat'] font-bold text-base text-[#1a1c1c]">
+                  Remove Custom Design?
+                </h3>
+                <p className="font-['Inter'] text-xs text-[#555f6f] mt-1">
+                  Are you sure you want to remove design <strong className="text-[#1a1c1c]">"{designToDelete.name}"</strong>?
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#eeeeee]">
+              <button
+                type="button"
+                onClick={() => setDesignToDelete(null)}
+                disabled={isDeletingDesign}
+                className="px-4 py-2 text-xs font-semibold text-[#555f6f] hover:bg-[#eeeeee] rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteDesign}
+                disabled={isDeletingDesign}
+                className="px-4 py-2 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-xl transition-colors flex items-center gap-2 shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                {isDeletingDesign ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Removing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Remove Design</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

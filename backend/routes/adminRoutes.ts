@@ -8,6 +8,8 @@ import {
   createAdminProduct,
   updateAdminProduct,
   deleteAdminProduct,
+  deleteAllAdminProducts,
+  loadSampleAdminProducts,
   toggleAdminProductStock,
   getAdminOrders,
   updateAdminOrder,
@@ -34,6 +36,8 @@ router.delete('/users/:id', deleteAdminUser);
 
 // Product Management
 router.post('/products', createAdminProduct);
+router.delete('/products/all', deleteAllAdminProducts);
+router.post('/products/load-samples', loadSampleAdminProducts);
 router.put('/products/:id', updateAdminProduct);
 router.delete('/products/:id', deleteAdminProduct);
 router.patch('/products/:id/toggle', toggleAdminProductStock);

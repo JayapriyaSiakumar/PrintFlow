@@ -282,6 +282,18 @@ export const api = {
     });
   },
 
+  async deleteAllAdminProducts(): Promise<{ success: boolean; deletedCount?: number; message: string }> {
+    return fetchJson<{ success: boolean; deletedCount?: number; message: string }>('/api/admin/products/all', {
+      method: 'DELETE',
+    });
+  },
+
+  async loadSampleAdminProducts(): Promise<{ success: boolean; products: Product[]; message: string }> {
+    return fetchJson<{ success: boolean; products: Product[]; message: string }>('/api/admin/products/load-samples', {
+      method: 'POST',
+    });
+  },
+
   async toggleAdminProductStock(id: string): Promise<{ success: boolean; product: Product; inStock: boolean }> {
     return fetchJson<{ success: boolean; product: Product; inStock: boolean }>(`/api/admin/products/${id}/toggle`, {
       method: 'PATCH',

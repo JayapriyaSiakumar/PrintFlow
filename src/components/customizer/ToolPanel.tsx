@@ -31,6 +31,7 @@ import {
   ClipartItem,
   PrintableAreaConfig,
 } from './types';
+import { FontSelectorDropdown } from './FontSelectorDropdown';
 
 interface ToolPanelProps {
   product: Product | null;
@@ -399,20 +400,17 @@ export const ToolPanel: React.FC<ToolPanelProps> = ({
                   />
                 </div>
 
-                {/* Font Family */}
+                {/* Font Family (Google Fonts Integration) */}
                 <div>
-                  <label className="text-[11px] font-semibold text-[#555f6f] block mb-1">Font Family</label>
-                  <select
+                  <label className="text-[11px] font-semibold text-[#555f6f] block mb-1">
+                    Font Family (Google Fonts)
+                  </label>
+                  <FontSelectorDropdown
                     value={selectedElement.fontFamily || 'Montserrat'}
-                    onChange={(e) => onUpdateElement(selectedElement.id, { fontFamily: e.target.value })}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-[#e2e8f0] focus:border-[#0058be] outline-none bg-white cursor-pointer"
-                  >
-                    {FONT_OPTIONS.map((f) => (
-                      <option key={f.value} value={f.value}>
-                        {f.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(fontFamily) =>
+                      onUpdateElement(selectedElement.id, { fontFamily })
+                    }
+                  />
                 </div>
 
                 {/* Font Size & Letter Spacing */}

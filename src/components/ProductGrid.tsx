@@ -5,7 +5,7 @@ import { SortOption } from '../types';
 import { ChevronDown, ChevronLeft, ChevronRight, Search, SlidersHorizontal, Sparkles } from 'lucide-react';
 
 export const ProductGrid: React.FC = () => {
-  const { products, filters, setSortBy, setSearchQuery, loadingProducts } = useApp();
+  const { products, filters, setSortBy, setSearchQuery, loadingProducts, isAdmin, setActiveView } = useApp();
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 6;
@@ -102,12 +102,24 @@ export const ProductGrid: React.FC = () => {
           ))}
         </div>
       ) : products.length === 0 ? (
-        <div className="p-12 text-center bg-white rounded-2xl border border-dashed border-[#c2c6d6] my-6">
-          <SlidersHorizontal className="w-10 h-10 text-[#727785] mx-auto mb-3 opacity-60" />
-          <h3 className="font-['Montserrat'] font-semibold text-lg text-[#1a1c1c]">No products match your filters</h3>
-          <p className="font-['Inter'] text-sm text-[#555f6f] mt-1 max-w-md mx-auto">
-            Try adjusting your category, sizing, or color criteria to view available print blanks.
-          </p>
+        <div className="p-12 text-center bg-white rounded-2xl border border-dashed border-[#c2c6d6] my-6 space-y-4">
+          <SlidersHorizontal className="w-10 h-10 text-[#727785] mx-auto opacity-60" />
+          <div>
+            <h3 className="font-['Montserrat'] font-semibold text-lg text-[#1a1c1c]">No products found</h3>
+            <p className="font-['Inter'] text-sm text-[#555f6f] mt-1 max-w-md mx-auto">
+              The catalog is currently empty or no items match your search/filter criteria.
+            </p>
+          </div>
+          {isAdmin && (
+            <div className="pt-2">
+              <button
+                onClick={() => setActiveView('admin')}
+                className="px-4 py-2 bg-[#6b38d4] hover:bg-[#582db5] text-white text-xs font-semibold rounded-xl shadow-xs transition-colors cursor-pointer"
+              >
+                Go to Admin Dashboard to Add Products
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">

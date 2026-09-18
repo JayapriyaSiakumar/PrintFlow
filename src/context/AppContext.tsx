@@ -143,9 +143,9 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [activeView, setActiveView] = useState<ActiveView>('products');
-  const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
-  const [totalProducts, setTotalProducts] = useState<number>(INITIAL_PRODUCTS.length);
-  const [loadingProducts, setLoadingProducts] = useState<boolean>(false);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [totalProducts, setTotalProducts] = useState<number>(0);
+  const [loadingProducts, setLoadingProducts] = useState<boolean>(true);
   const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [loadingCategories, setLoadingCategories] = useState<boolean>(false);
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
@@ -257,32 +257,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setProducts(res.products);
       setTotalProducts(res.total);
     } catch (err) {
-      console.warn('Fallback to local product catalog filter:', err);
-      let local = [...INITIAL_PRODUCTS];
-      if (filters.category && filters.category !== 'All') {
-        const catFilter = filters.category.toLowerCase();
-        local = local.filter((p) => {
-          const catName = (typeof p.category === 'object' ? p.category.name : (p.categoryName || p.category || '')).toLowerCase();
-          const catSlug = (typeof p.category === 'object' ? p.category.slug : '').toLowerCase();
-          const catId = (typeof p.category === 'object' ? p.category.id : p.category || '').toLowerCase();
-          return catName === catFilter || catSlug === catFilter || catId === catFilter;
-        });
-      }
-      if (filters.sizes.length > 0) {
-        local = local.filter((p) => p.sizes.some((s) => filters.sizes.includes(s)));
-      }
-      if (filters.colors.length > 0) {
-        local = local.filter((p) => p.colors.some((c) => filters.colors.includes(c.hex.toLowerCase())));
-      }
-      if (filters.minPrice) local = local.filter((p) => p.price >= Number(filters.minPrice));
-      if (filters.maxPrice) local = local.filter((p) => p.price <= Number(filters.maxPrice));
-      if (filters.sortBy === 'price-asc') local.sort((a, b) => a.price - b.price);
-      else if (filters.sortBy === 'price-desc') local.sort((a, b) => b.price - a.price);
-      else if (filters.sortBy === 'popular') local.sort((a, b) => b.rating * b.reviewsCount - a.rating * a.reviewsCount);
-      else local.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-      setProducts(local);
-      setTotalProducts(local.length);
+      console.warn('Error loading product catalog:', err);
+      // Keep state as is, do not force-seed INITIAL_PRODUCTS
     } finally {
       setLoadingProducts(false);
     }

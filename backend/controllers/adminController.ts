@@ -8,6 +8,7 @@ import CustomDesign from '../models/CustomDesign';
 import Notification from '../models/Notification';
 import memoryStore from '../utils/memoryStore';
 import { AuthenticatedRequest } from '../middleware/authMiddleware';
+import { INITIAL_PRODUCTS } from '../../src/data/initialData';
 
 /**
  * @desc    Get admin dashboard stats and KPIs
@@ -352,6 +353,7 @@ export const createAdminProduct = async (req: AuthenticatedRequest, res: Respons
       colors,
       tag,
       featured,
+      customizationConfig,
     } = req.body;
 
     if (!name || !price || !category) {
@@ -386,11 +388,11 @@ export const createAdminProduct = async (req: AuthenticatedRequest, res: Respons
         spec: spec || '100% Premium Combed Cotton',
         description: description || 'High-grade custom apparel blank designed for precision on-demand printing.',
         sizes: sizes || ['S', 'M', 'L', 'XL', '2XL'],
-        colors: colors || [
+        colors: colors && colors.length > 0 ? colors : [
           { name: 'Pure White', hex: '#ffffff', bgClass: 'bg-white' },
           { name: 'Onyx Black', hex: '#111111', bgClass: 'bg-neutral-900' },
         ],
-        image: image || 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=800&q=80',
+        image: image || 'https://images.unsplash.com/photo-1581655353564-df123a1eb820?auto=format&fit=crop&w=800&q=80',
         imagePublicId: imagePublicId || '',
         mockupImages: Array.isArray(mockupImages) ? mockupImages : [],
         tag: tag || 'New',
@@ -398,6 +400,7 @@ export const createAdminProduct = async (req: AuthenticatedRequest, res: Respons
         reviewsCount: 1,
         featured: Boolean(featured),
         stock: Number(stock),
+        customizationConfig: customizationConfig || undefined,
       });
 
       const populated = await Product.findById(product._id)
@@ -427,11 +430,11 @@ export const createAdminProduct = async (req: AuthenticatedRequest, res: Respons
       spec: spec || '100% Premium Combed Cotton',
       description: description || 'High-grade custom apparel blank designed for precision on-demand printing.',
       sizes: sizes || ['S', 'M', 'L', 'XL', '2XL'],
-      colors: colors || [
+      colors: colors && colors.length > 0 ? colors : [
         { name: 'Pure White', hex: '#ffffff', bgClass: 'bg-white' },
         { name: 'Onyx Black', hex: '#111111', bgClass: 'bg-neutral-900' },
       ],
-      image: image || 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=800&q=80',
+      image: image || 'https://images.unsplash.com/photo-1581655353564-df123a1eb820?auto=format&fit=crop&w=800&q=80',
       imagePublicId: imagePublicId || '',
       mockupImages: Array.isArray(mockupImages) ? mockupImages : [],
       tag: tag || 'New',
@@ -439,6 +442,7 @@ export const createAdminProduct = async (req: AuthenticatedRequest, res: Respons
       reviewsCount: 1,
       featured: Boolean(featured),
       stock: Number(stock),
+      customizationConfig: customizationConfig || undefined,
       createdAt: new Date().toISOString(),
       details: {
         material: '100% Combed Cotton',
@@ -464,7 +468,22 @@ export const createAdminProduct = async (req: AuthenticatedRequest, res: Respons
 export const updateAdminProduct = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, price, category, spec, description, image, imagePublicId, mockupImages, stock, tag, featured } = req.body;
+    const {
+      name,
+      price,
+      category,
+      spec,
+      description,
+      image,
+      imagePublicId,
+      mockupImages,
+      stock,
+      tag,
+      featured,
+      customizationConfig,
+      colors,
+      sizes,
+    } = req.body;
 
     if (mongoose.connection.readyState === 1) {
       let product = await Product.findOne({ productId: id });
@@ -502,6 +521,9 @@ export const updateAdminProduct = async (req: AuthenticatedRequest, res: Respons
       if (stock !== undefined) product.stock = Number(stock);
       if (tag !== undefined) product.tag = tag;
       if (featured !== undefined) product.featured = Boolean(featured);
+      if (customizationConfig !== undefined) product.customizationConfig = customizationConfig;
+      if (colors !== undefined && Array.isArray(colors)) product.colors = colors;
+      if (sizes !== undefined && Array.isArray(sizes)) product.sizes = sizes;
 
       await product.save();
 
@@ -543,6 +565,9 @@ export const updateAdminProduct = async (req: AuthenticatedRequest, res: Respons
     if (stock !== undefined) p.stock = Number(stock);
     if (tag !== undefined) p.tag = tag;
     if (featured !== undefined) p.featured = Boolean(featured);
+    if (customizationConfig !== undefined) p.customizationConfig = customizationConfig;
+    if (colors !== undefined && Array.isArray(colors)) p.colors = colors;
+    if (sizes !== undefined && Array.isArray(sizes)) p.sizes = sizes;
 
     res.json({ success: true, product: p, message: 'Product updated successfully.' });
   } catch (error: any) {
@@ -558,29 +583,147 @@ export const updateAdminProduct = async (req: AuthenticatedRequest, res: Respons
 export const deleteAdminProduct = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const cleanId = String(id || '').trim();
 
-    if (mongoose.connection.readyState === 1) {
-      let product = await Product.findOne({ productId: id });
-      if (!product && mongoose.Types.ObjectId.isValid(id)) {
-        product = await Product.findById(id);
-      }
-      if (!product) {
-        return res.status(404).json({ success: false, error: 'Product not found.' });
-      }
-
-      await product.deleteOne();
-      return res.json({ success: true, message: `Product "${product.name}" deleted successfully.` });
+    if (!cleanId) {
+      return res.status(400).json({ success: false, error: 'Product ID is required.' });
     }
 
-    const productIndex = memoryStore.products.findIndex((p) => p.id === id);
+    if (cleanId === 'all') {
+      return deleteAllAdminProducts(req, res);
+    }
+
+    if (mongoose.connection.readyState === 1) {
+      let product = await Product.findOne({ productId: cleanId });
+      if (!product && mongoose.Types.ObjectId.isValid(cleanId)) {
+        product = await Product.findById(cleanId);
+      }
+      if (!product) {
+        product = await Product.findOne({
+          $or: [
+            { productId: new RegExp(`^${cleanId}$`, 'i') },
+            { name: new RegExp(`^${cleanId}$`, 'i') },
+          ],
+        });
+      }
+      if (!product) {
+        return res.status(404).json({ success: false, error: `Product "${cleanId}" not found.` });
+      }
+
+      const prodName = product.name;
+      await product.deleteOne();
+      return res.json({ success: true, message: `Product "${prodName}" deleted successfully.` });
+    }
+
+    const productIndex = memoryStore.products.findIndex((p) => {
+      const pId = String(p.id || '').trim().toLowerCase();
+      const targetId = cleanId.toLowerCase();
+      const pProdId = String((p as any).productId || '').trim().toLowerCase();
+      const pMongoId = String((p as any)._id || '').trim().toLowerCase();
+      return pId === targetId || pProdId === targetId || pMongoId === targetId;
+    });
+
     if (productIndex === -1) {
-      return res.status(404).json({ success: false, error: 'Product not found.' });
+      return res.status(404).json({ success: false, error: `Product "${cleanId}" not found.` });
     }
 
     const removed = memoryStore.products.splice(productIndex, 1)[0];
     res.json({ success: true, message: `Product "${removed.name}" deleted successfully.` });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * @desc    Delete ALL products from the catalog
+ * @route   DELETE /api/admin/products/all
+ * @access  Private / Admin
+ */
+export const deleteAllAdminProducts = async (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    let deletedCount = 0;
+    if (mongoose.connection.readyState === 1) {
+      const result = await Product.deleteMany({});
+      deletedCount = result.deletedCount || 0;
+    } else {
+      deletedCount = memoryStore.products.length;
+      memoryStore.products = [];
+    }
+
+    return res.json({
+      success: true,
+      deletedCount,
+      message: `Successfully removed all ${deletedCount} products from catalog.`,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * @desc    Load default sample products
+ * @route   POST /api/admin/products/load-samples
+ * @access  Private / Admin
+ */
+export const loadSampleAdminProducts = async (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (mongoose.connection.readyState === 1) {
+      // Find category documents to link
+      const categories = await Category.find();
+      const catMap = new Map<string, any>();
+      categories.forEach((c) => catMap.set(c.slug.toLowerCase(), c._id));
+
+      const docsToInsert = INITIAL_PRODUCTS.map((p) => {
+        const catSlug = typeof p.category === 'object' ? (p.category as any).slug : (p.category || 'apparel');
+        const catId = catMap.get(String(catSlug).toLowerCase()) || (categories[0]?._id);
+        return {
+          productId: p.id,
+          name: p.name,
+          category: catId,
+          price: p.price,
+          stock: p.stock || 50,
+          spec: p.spec,
+          description: p.description,
+          sizes: p.sizes,
+          colors: p.colors,
+          image: p.image,
+          imagePublicId: p.imagePublicId || '',
+          mockupImages: p.mockupImages || [],
+          tag: p.tag,
+          rating: p.rating,
+          reviewsCount: p.reviewsCount,
+          featured: p.featured,
+          customizationConfig: p.customizationConfig,
+          details: p.details,
+        };
+      });
+
+      await Product.insertMany(docsToInsert);
+      const all = await Product.find().populate('category', 'name slug status');
+      return res.json({
+        success: true,
+        products: all,
+        message: `Successfully loaded ${all.length} sample products.`,
+      });
+    }
+
+    // Memory Store
+    memoryStore.products = INITIAL_PRODUCTS.map((p) => {
+      const catObj = memoryStore.categories.find((c) => c.slug === 'apparel') || memoryStore.categories[0];
+      return {
+        ...p,
+        category: catObj ? { id: catObj.id, name: catObj.name, slug: catObj.slug, status: catObj.status } : p.category,
+        categoryName: catObj ? catObj.name : 'Apparel',
+      };
+    });
+
+    return res.json({
+      success: true,
+      products: memoryStore.products,
+      message: `Successfully loaded ${memoryStore.products.length} sample products.`,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error.message });
   }
 };
 

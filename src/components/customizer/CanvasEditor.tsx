@@ -1,15 +1,18 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import Konva from 'konva';
-import { DesignElement, DesignSide, Product, ProductColor } from '../../types';
+import { Canvas, Rect, Text, IText, FabricImage, Group, FabricObject } from 'fabric';
+import { DesignElement, DesignSide, Product, ProductColor, ProductCustomizationView } from '../../types';
 import { PrintableAreaConfig } from './types';
 import { ZoomControls } from './ZoomControls';
-import { Eye, EyeOff, Lock, Unlock, Move } from 'lucide-react';
+import { Move } from 'lucide-react';
 import { generateProductPreview, loadSafeImage } from '../../utils/previewGenerator';
+import { getEffectiveCustomizationConfig } from '../../utils/customizationEngine';
+import { loadGoogleFont } from '../../services/fontService';
 
 interface CanvasEditorProps {
   product: Product | null;
   selectedColor: ProductColor;
   activeSide: DesignSide;
+  activeView?: ProductCustomizationView;
   printArea: PrintableAreaConfig;
   elements: DesignElement[];
   selectedElementId: string | null;
@@ -20,10 +23,21 @@ interface CanvasEditorProps {
   onExportPreviewRef?: React.MutableRefObject<(() => Promise<string>) | null>;
 }
 
+// Global Fabric object styling defaults for a polished designer UI
+FabricObject.ownDefaults.borderColor = '#0058be';
+FabricObject.ownDefaults.borderDashArray = [4, 4];
+FabricObject.ownDefaults.borderScaleFactor = 1.5;
+FabricObject.ownDefaults.cornerColor = '#ffffff';
+FabricObject.ownDefaults.cornerStrokeColor = '#0058be';
+FabricObject.ownDefaults.cornerSize = 10;
+FabricObject.ownDefaults.cornerStyle = 'circle';
+FabricObject.ownDefaults.transparentCorners = false;
+
 export const CanvasEditor: React.FC<CanvasEditorProps> = ({
   product,
   selectedColor,
   activeSide,
+  activeView,
   printArea,
   elements,
   selectedElementId,
@@ -33,33 +47,32 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
   showGuides = true,
   onExportPreviewRef,
 }) => {
+  const canvasElRef = useRef<HTMLCanvasElement>(null);
+  const fabricRef = useRef<Canvas | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const stageRef = useRef<Konva.Stage | null>(null);
-  const baseLayerRef = useRef<Konva.Layer | null>(null);
-  const layerRef = useRef<Konva.Layer | null>(null);
-  const guideLayerRef = useRef<Konva.Layer | null>(null);
-  const transformerRef = useRef<Konva.Transformer | null>(null);
 
-  // Loaded images cache
+  // Cached images
   const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
-  // Base product image cache
   const baseImageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
 
-  // Zoom state
+  // Prevent circular update loops between Fabric events and React state
+  const isInternalUpdatingRef = useRef<boolean>(false);
+
+  // Zoom and Pan state
   const [zoom, setZoom] = useState<number>(1);
   const [panPosition, setPanPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState<boolean>(false);
   const startPanRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  // Snap guide states
+  // Snap guide state
   const [snapX, setSnapX] = useState<boolean>(false);
   const [snapY, setSnapY] = useState<boolean>(false);
 
-  // Virtual stage dimensions
+  // Stage dimensions in virtual coordinate units
   const STAGE_WIDTH = 500;
   const STAGE_HEIGHT = 540;
 
-  // Zoom handlers
+  // Zoom controls
   const handleZoomIn = () => setZoom((prev) => Math.min(2.5, +(prev + 0.15).toFixed(2)));
   const handleZoomOut = () => setZoom((prev) => Math.max(0.6, +(prev - 0.15).toFixed(2)));
   const handleResetZoom = () => {
@@ -76,11 +89,10 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     setPanPosition({ x: 0, y: 0 });
   };
 
-  // Mouse wheel zoom
+  // Mouse wheel zoom / pan
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     e.preventDefault();
     if (e.ctrlKey || e.metaKey) {
-      // Zoom
       const direction = e.deltaY > 0 ? -1 : 1;
       const factor = 0.08;
       setZoom((prev) => {
@@ -88,7 +100,6 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
         return +Math.min(2.5, Math.max(0.6, next)).toFixed(2);
       });
     } else if (zoom > 1) {
-      // Pan when zoomed in
       setPanPosition((prev) => ({
         x: prev.x - e.deltaX * 0.8,
         y: prev.y - e.deltaY * 0.8,
@@ -96,10 +107,9 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     }
   };
 
-  // Panning start
+  // Panning handlers
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.button === 1 || (e.button === 0 && e.altKey)) {
-      // Middle click or Alt+drag to pan
       setIsPanning(true);
       startPanRef.current = { x: e.clientX - panPosition.x, y: e.clientY - panPosition.y };
     }
@@ -118,178 +128,126 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
     if (isPanning) setIsPanning(false);
   };
 
-  // Expose exportPreviewDataUrl with base product mockup guaranteed as Layer 1
+  // 1. Initialize Fabric Canvas
   useEffect(() => {
-    if (onExportPreviewRef) {
-      onExportPreviewRef.current = async () => {
-        try {
-          // Generate high-definition composite preview with default or product image as Layer 1
-          const previewResult = await generateProductPreview({
-            product,
-            selectedColor,
-            activeSide,
-            printArea,
-            elements,
-          });
-          if (previewResult.dataUrl) {
-            return previewResult.dataUrl;
-          }
-        } catch (err) {
-          console.warn('Dedicated preview generator error, checking Konva stage:', err);
-        }
+    if (!canvasElRef.current) return;
 
-        const stage = stageRef.current;
-        const guideLayer = guideLayerRef.current;
-        const transformer = transformerRef.current;
-        if (!stage || !layerRef.current) return '';
-
-        // Temporarily hide guides and transformer
-        if (guideLayer) guideLayer.visible(false);
-        if (transformer) transformer.visible(false);
-
-        // Deselect node visually during snapshot
-        const oldNodes = transformer ? transformer.nodes() : [];
-        if (transformer) transformer.nodes([]);
-
-        // Reset stage scale for exact snapshot
-        const oldScale = stage.scale();
-        const oldPos = stage.position();
-        stage.scale({ x: 1, y: 1 });
-        stage.position({ x: 0, y: 0 });
-        stage.draw();
-
-        let dataUrl = '';
-        try {
-          dataUrl = stage.toDataURL({
-            pixelRatio: 2,
-            mimeType: 'image/png',
-          });
-        } catch (e) {
-          console.warn('stage.toDataURL failed:', e);
-        }
-
-        // Restore
-        stage.scale(oldScale);
-        stage.position(oldPos);
-        if (guideLayer) guideLayer.visible(true);
-        if (transformer) {
-          transformer.nodes(oldNodes);
-          transformer.visible(true);
-        }
-        stage.draw();
-
-        return dataUrl;
-      };
-    }
-  }, [onExportPreviewRef, product, selectedColor, activeSide, printArea, elements]);
-
-  // Initialize Stage & Layers
-  useEffect(() => {
-    if (!containerRef.current) return;
-
-    // Stage
-    const stage = new Konva.Stage({
-      container: containerRef.current,
+    const canvas = new Canvas(canvasElRef.current, {
       width: STAGE_WIDTH,
       height: STAGE_HEIGHT,
+      selection: true,
+      preserveObjectStacking: true,
+      backgroundColor: '#fcfcfd',
     });
-    stageRef.current = stage;
 
-    // Base Product Layer, Main Design Layer, and Guide Layer
-    const baseLayer = new Konva.Layer({ name: 'base-product-layer' });
-    const mainLayer = new Konva.Layer({ name: 'main-design-layer' });
-    const guideLayer = new Konva.Layer({ name: 'guide-layer' });
+    fabricRef.current = canvas;
 
-    stage.add(baseLayer);
-    stage.add(mainLayer);
-    stage.add(guideLayer);
+    // Selection handlers
+    const handleSelection = (e: any) => {
+      if (isInternalUpdatingRef.current) return;
+      const selected = e.selected?.[0];
+      if (selected && (selected as any).data?.id) {
+        onSelectElement((selected as any).data.id);
+      }
+    };
 
-    baseLayerRef.current = baseLayer;
-    layerRef.current = mainLayer;
-    guideLayerRef.current = guideLayer;
+    const handleCleared = () => {
+      if (isInternalUpdatingRef.current) return;
+      onSelectElement(null);
+    };
 
-    // Transformer
-    const tr = new Konva.Transformer({
-      rotateAnchorOffset: 24,
-      rotationSnaps: [0, 45, 90, 135, 180, 225, 270, 315],
-      borderStroke: '#0058be',
-      borderStrokeWidth: 1.5,
-      borderDash: [4, 4],
-      anchorStroke: '#0058be',
-      anchorFill: '#ffffff',
-      anchorSize: 9,
-      anchorCornerRadius: 2,
-      enabledAnchors: [
-        'top-left',
-        'top-right',
-        'bottom-left',
-        'bottom-right',
-        'middle-left',
-        'middle-right',
-        'top-center',
-        'bottom-center',
-      ],
-      boundBoxFunc: (oldBox, newBox) => {
-        // Prevent element from shrinking to negative size
-        if (Math.abs(newBox.width) < 15 || Math.abs(newBox.height) < 15) {
-          return oldBox;
-        }
-        return newBox;
-      },
-    });
-    mainLayer.add(tr);
-    transformerRef.current = tr;
+    canvas.on('selection:created', handleSelection);
+    canvas.on('selection:updated', handleSelection);
+    canvas.on('selection:cleared', handleCleared);
 
-    // Deselect when clicking on empty stage or base mockup
-    stage.on('click tap', (e) => {
-      if (
-        e.target === stage ||
-        e.target.name() === 'background-mockup' ||
-        e.target.name() === 'base-product-image' ||
-        e.target.name() === 'color-tint-overlay'
-      ) {
-        onSelectElement(null);
+    // Object moving: snap-to-center guidelines
+    canvas.on('object:moving', (e: any) => {
+      const target = e.target;
+      if (!target || !(target as any).data?.id) return;
+
+      const printCenterX = printArea.left + printArea.width / 2;
+      const printCenterY = printArea.top + printArea.height / 2;
+
+      const objCenterX = target.left + (target.getScaledWidth() || 0) / 2;
+      const objCenterY = target.top + (target.getScaledHeight() || 0) / 2;
+
+      const snapThreshold = 6;
+      const nearCenterX = Math.abs(objCenterX - printCenterX) < snapThreshold;
+      const nearCenterY = Math.abs(objCenterY - printCenterY) < snapThreshold;
+
+      setSnapX(nearCenterX);
+      setSnapY(nearCenterY);
+
+      if (nearCenterX) {
+        target.set({ left: printCenterX - (target.getScaledWidth() || 0) / 2 });
+      }
+      if (nearCenterY) {
+        target.set({ top: printCenterY - (target.getScaledHeight() || 0) / 2 });
       }
     });
 
+    // Object modified: update state
+    canvas.on('object:modified', (e: any) => {
+      setSnapX(false);
+      setSnapY(false);
+
+      const target = e.target;
+      if (!target || !(target as any).data?.id) return;
+
+      const id = (target as any).data.id;
+      const relX = Math.round(target.left - printArea.left);
+      const relY = Math.round(target.top - printArea.top);
+      const rotation = Math.round(target.angle || 0);
+      const scaleX = +(target.scaleX || 1).toFixed(3);
+      const scaleY = +(target.scaleY || 1).toFixed(3);
+
+      isInternalUpdatingRef.current = true;
+      onUpdateElement(id, {
+        x: relX,
+        y: relY,
+        rotation,
+        scaleX,
+        scaleY,
+      });
+      isInternalUpdatingRef.current = false;
+
+      if (onCommitHistory) onCommitHistory();
+    });
+
     return () => {
-      stage.destroy();
-      stageRef.current = null;
-      baseLayerRef.current = null;
-      layerRef.current = null;
-      guideLayerRef.current = null;
-      transformerRef.current = null;
+      canvas.dispose();
+      fabricRef.current = null;
     };
   }, []);
 
-  // Render Base Product Mockup Layer (First / Bottom Layer of Canvas)
+  // 2. Render Base Product Mockup & Background
   useEffect(() => {
-    const baseLayer = baseLayerRef.current;
-    if (!baseLayer) return;
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+
+    const config = getEffectiveCustomizationConfig(product);
+    const currentView =
+      activeView ||
+      config.views.find((v) => v.id === activeSide) ||
+      config.views[0];
 
     const activeSideMockup = product?.mockupImages?.find((m) => m.side === activeSide);
     const productImageUrl =
+      currentView?.mockupUrl ||
       activeSideMockup?.url ||
       product?.image ||
-      'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=800&q=80';
+      'https://images.unsplash.com/photo-1581655353564-df123a1eb820?auto=format&fit=crop&w=800&q=80';
 
-    const drawBaseContent = (img: HTMLImageElement) => {
-      if (!baseLayerRef.current) return;
-      baseLayer.destroyChildren();
+    const drawBaseProduct = (img: HTMLImageElement) => {
+      if (!fabricRef.current) return;
 
-      // 1. Crisp canvas background card
-      const bgCard = new Konva.Rect({
-        x: 0,
-        y: 0,
-        width: STAGE_WIDTH,
-        height: STAGE_HEIGHT,
-        fill: '#fcfcfd',
-        cornerRadius: 24,
-        name: 'background-mockup',
-      });
-      baseLayer.add(bgCard);
+      // Remove existing background and base objects
+      const existingBase = canvas
+        .getObjects()
+        .filter((o) => (o as any).name?.startsWith('base-'));
+      existingBase.forEach((o) => canvas.remove(o));
 
-      // 2. Aspect-ratio fitting math
+      // Calculate aspect ratio
       const padding = 16;
       const availW = STAGE_WIDTH - padding * 2;
       const availH = STAGE_HEIGHT - padding * 2;
@@ -311,297 +269,381 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       const drawX = Math.round((STAGE_WIDTH - drawW) / 2);
       const drawY = Math.round((STAGE_HEIGHT - drawH) / 2);
 
-      // 3. Product Mockup Image as Base Layer
-      const productImageNode = new Konva.Image({
-        image: img,
-        x: drawX,
-        y: drawY,
-        width: drawW,
-        height: drawH,
+      // 1. FabricImage for Product Mockup
+      const scaleX = drawW / naturalW;
+      const scaleY = drawH / naturalH;
+
+      const productMockup = new FabricImage(img, {
+        left: drawX,
+        top: drawY,
+        scaleX,
+        scaleY,
+        selectable: false,
+        evented: false,
+        hoverCursor: 'default',
         name: 'base-product-image',
       });
-      baseLayer.add(productImageNode);
+      canvas.insertAt(productMockup, 0);
 
-      // 4. Garment Color Tint Overlay
-      if (selectedColor.hex && selectedColor.hex.toLowerCase() !== '#ffffff') {
-        const tintRect = new Konva.Rect({
-          x: drawX,
-          y: drawY,
+      // 2. Color tint overlay if enabled
+      const tintingEnabled = config.colorTinting?.enabled !== false;
+      if (tintingEnabled && selectedColor.hex && selectedColor.hex.toLowerCase() !== '#ffffff') {
+        const tintRect = new Rect({
+          left: drawX,
+          top: drawY,
           width: drawW,
           height: drawH,
           fill: selectedColor.hex,
-          opacity: 0.36,
-          globalCompositeOperation: 'multiply',
-          cornerRadius: 8,
-          name: 'color-tint-overlay',
+          opacity: config.colorTinting?.opacity || 0.36,
+          rx: 8,
+          ry: 8,
+          selectable: false,
+          evented: false,
+          name: 'base-color-tint',
         });
-        baseLayer.add(tintRect);
+        canvas.insertAt(tintRect, 1);
       }
 
-      // 5. Back View Indicator Pill
-      if (activeSide === 'back') {
-        const backPill = new Konva.Group({
-          x: STAGE_WIDTH - 106,
-          y: 16,
-          listening: false,
+      // 3. Dynamic View Indicator Pill
+      if (config.views.length > 1 && currentView && currentView.name) {
+        const badgeText = currentView.name.toUpperCase();
+        const estWidth = Math.max(90, badgeText.length * 9 + 24);
+
+        const badgeBg = new Rect({
+          width: estWidth,
+          height: 22,
+          fill: '#1a1c1c',
+          opacity: 0.75,
+          rx: 11,
+          ry: 11,
+          originX: 'center',
+          originY: 'center',
         });
-        backPill.add(
-          new Konva.Rect({
-            width: 90,
-            height: 22,
-            fill: '#1a1c1c',
-            opacity: 0.7,
-            cornerRadius: 11,
-          })
-        );
-        backPill.add(
-          new Konva.Text({
-            text: 'BACK VIEW',
-            fontSize: 9,
-            fontFamily: 'Inter',
-            fontStyle: 'bold',
-            fill: '#ffffff',
-            width: 90,
-            y: 6,
-            align: 'center',
-          })
-        );
-        baseLayer.add(backPill);
+
+        const badgeLabel = new Text(badgeText, {
+          fontSize: 9,
+          fontFamily: 'Inter',
+          fontWeight: 'bold',
+          fill: '#ffffff',
+          originX: 'center',
+          originY: 'center',
+        });
+
+        const badgeGroup = new Group([badgeBg, badgeLabel], {
+          left: STAGE_WIDTH - estWidth - 16,
+          top: 16,
+          selectable: false,
+          evented: false,
+        });
+        (badgeGroup as any).name = 'base-view-badge';
+
+        canvas.add(badgeGroup);
       }
 
-      baseLayer.batchDraw();
+      canvas.requestRenderAll();
     };
 
     const cached = baseImageCacheRef.current.get(productImageUrl);
     if (cached && cached.complete && cached.naturalWidth > 0) {
-      drawBaseContent(cached);
+      drawBaseProduct(cached);
     } else {
       let isCurrent = true;
       loadSafeImage(productImageUrl)
         .then((img) => {
           if (!isCurrent) return;
           baseImageCacheRef.current.set(productImageUrl, img);
-          drawBaseContent(img);
+          drawBaseProduct(img);
         })
         .catch((err) => {
-          console.warn('Failed to load base product mockup image:', productImageUrl, err);
+          console.warn('Failed to load base product image:', err);
         });
-
       return () => {
         isCurrent = false;
       };
     }
-  }, [product, selectedColor, activeSide]);
+  }, [product, selectedColor, activeSide, activeView]);
 
-  // Update Guides (Printable Area & Safe Zone)
+  // 3. Render Guides (Printable Area Boundary & Safe Zone)
   useEffect(() => {
-    const guideLayer = guideLayerRef.current;
-    if (!guideLayer) return;
+    const canvas = fabricRef.current;
+    if (!canvas) return;
 
-    guideLayer.destroyChildren();
+    // Remove existing guide objects
+    const existingGuides = canvas
+      .getObjects()
+      .filter((o) => (o as any).name?.startsWith('guide-'));
+    existingGuides.forEach((o) => canvas.remove(o));
 
     if (showGuides) {
-      // Printable Area Outer Dashed Box
-      const printBox = new Konva.Rect({
-        x: printArea.left,
-        y: printArea.top,
+      const isCircle = printArea.shape === 'circle';
+      const isRounded = printArea.shape === 'rounded' || isCircle;
+      const cornerRadius = isCircle
+        ? Math.min(printArea.width, printArea.height) / 2
+        : printArea.borderRadius || (isRounded ? 16 : 0);
+
+      // Outer dashed printable area box
+      const printBox = new Rect({
+        left: printArea.left,
+        top: printArea.top,
         width: printArea.width,
         height: printArea.height,
+        fill: 'transparent',
         stroke: '#0058be',
         strokeWidth: 1.5,
-        dash: [6, 4],
+        strokeDashArray: [6, 4],
+        rx: cornerRadius,
+        ry: cornerRadius,
         opacity: 0.8,
-        listening: false,
+        selectable: false,
+        evented: false,
+        name: 'guide-print-box',
       });
-      guideLayer.add(printBox);
+      canvas.add(printBox);
 
-      // Safe Zone Inner Box
-      const safeBox = new Konva.Rect({
-        x: printArea.left + printArea.safeMargin,
-        y: printArea.top + printArea.safeMargin,
-        width: printArea.width - printArea.safeMargin * 2,
-        height: printArea.height - printArea.safeMargin * 2,
+      // Safe zone inner box
+      const safeW = Math.max(20, printArea.width - printArea.safeMargin * 2);
+      const safeH = Math.max(20, printArea.height - printArea.safeMargin * 2);
+      const safeRadius = Math.max(0, cornerRadius - printArea.safeMargin);
+
+      const safeBox = new Rect({
+        left: printArea.left + printArea.safeMargin,
+        top: printArea.top + printArea.safeMargin,
+        width: safeW,
+        height: safeH,
+        fill: 'transparent',
         stroke: '#16a34a',
         strokeWidth: 1,
-        dash: [3, 3],
+        strokeDashArray: [3, 3],
+        rx: safeRadius,
+        ry: safeRadius,
         opacity: 0.5,
-        listening: false,
+        selectable: false,
+        evented: false,
+        name: 'guide-safe-box',
       });
-      guideLayer.add(safeBox);
+      canvas.add(safeBox);
 
-      // Printable Area Label Tag
-      const labelTag = new Konva.Text({
-        x: printArea.left + 6,
-        y: printArea.top - 16,
-        text: `Printable Area (${printArea.width} × ${printArea.height})`,
-        fontSize: 10,
-        fontFamily: 'Inter',
-        fontStyle: 'bold',
-        fill: '#0058be',
-        listening: false,
-      });
-      guideLayer.add(labelTag);
+      // Printable area label tag
+      const labelTag = new Text(
+        `Printable Area (${printArea.width} × ${printArea.height}${printArea.shape ? ` • ${printArea.shape}` : ''})`,
+        {
+          left: printArea.left + 6,
+          top: Math.max(6, printArea.top - 18),
+          fontSize: 10,
+          fontFamily: 'Inter',
+          fontWeight: 'bold',
+          fill: '#0058be',
+          selectable: false,
+          evented: false,
+          name: 'guide-label',
+        }
+      );
+      canvas.add(labelTag);
     }
 
-    guideLayer.batchDraw();
+    canvas.requestRenderAll();
   }, [printArea, showGuides]);
 
-  // Render Elements on Konva Layer
+  // 4. Render Design Elements on Fabric Canvas
   useEffect(() => {
-    const layer = layerRef.current;
-    const tr = transformerRef.current;
-    if (!layer || !tr) return;
+    const canvas = fabricRef.current;
+    if (!canvas) return;
 
-    // Remove old element nodes (keep transformer)
-    const children = layer.getChildren().slice();
-    for (const child of children) {
-      if (child !== tr) {
-        child.destroy();
-      }
-    }
+    let isMounted = true;
 
-    let selectedNode: Konva.Shape | null = null;
+    // Remove existing user design objects (keep base and guides)
+    const existingDesignObjects = canvas
+      .getObjects()
+      .filter((o) => (o as any).name?.startsWith('element-'));
+    existingDesignObjects.forEach((o) => canvas.remove(o));
 
-    // Create a group for the printable area to position elements nicely
-    const printGroup = new Konva.Group({
-      x: printArea.left,
-      y: printArea.top,
-      name: 'print-group',
-    });
-    layer.add(printGroup);
+    const renderElementsAsync = async () => {
+      for (const el of elements) {
+        if (el.visible === false) continue;
 
-    elements.forEach((el) => {
-      if (el.visible === false) return;
+        const absLeft = printArea.left + el.x;
+        const absTop = printArea.top + el.y;
 
-      let node: Konva.Shape | null = null;
-
-      if (el.type === 'text') {
-        const textNode = new Konva.Text({
-          id: el.id,
-          name: 'design-element',
-          x: el.x,
-          y: el.y,
-          width: el.width,
-          text: el.text || 'Add Text',
-          fontSize: el.fontSize || 24,
-          fontFamily: el.fontFamily || 'Montserrat',
-          fill: el.fill || '#111111',
-          fontStyle: el.fontStyle || 'normal',
-          align: el.align || 'center',
-          letterSpacing: el.letterSpacing || 0,
-          rotation: el.rotation || 0,
-          scaleX: el.scaleX || 1,
-          scaleY: el.scaleY || 1,
-          opacity: el.opacity ?? 1,
-          draggable: !el.locked,
-        });
-
-        node = textNode;
-      } else if (el.type === 'image' && el.src) {
-        // Image node
-        let cachedImg = imageCacheRef.current.get(el.src);
-        if (!cachedImg) {
-          cachedImg = new window.Image();
-          cachedImg.crossOrigin = 'anonymous';
-          cachedImg.src = el.src;
-          cachedImg.onload = () => {
-            layer.batchDraw();
-          };
-          imageCacheRef.current.set(el.src, cachedImg);
-        }
-
-        const imgNode = new Konva.Image({
-          id: el.id,
-          name: 'design-element',
-          x: el.x,
-          y: el.y,
-          width: el.width,
-          height: el.height,
-          image: cachedImg,
-          rotation: el.rotation || 0,
-          scaleX: el.scaleX || 1,
-          scaleY: el.scaleY || 1,
-          opacity: el.opacity ?? 1,
-          draggable: !el.locked,
-        });
-
-        node = imgNode;
-      }
-
-      if (node) {
-        // Click to select
-        node.on('click tap', (e) => {
-          e.cancelBubble = true;
-          onSelectElement(el.id);
-        });
-
-        // Snap to center calculation during drag
-        node.on('dragmove', () => {
-          const centerX = printArea.width / 2;
-          const centerY = printArea.height / 2;
-          const nodeCenterActualX = node!.x() + (node!.width() * (node!.scaleX() || 1)) / 2;
-          const nodeCenterActualY = node!.y() + (node!.height() * (node!.scaleY() || 1)) / 2;
-
-          const snapThreshold = 6;
-          const nearCenterX = Math.abs(nodeCenterActualX - centerX) < snapThreshold;
-          const nearCenterY = Math.abs(nodeCenterActualY - centerY) < snapThreshold;
-
-          setSnapX(nearCenterX);
-          setSnapY(nearCenterY);
-
-          if (nearCenterX) {
-            node!.x(centerX - (node!.width() * (node!.scaleX() || 1)) / 2);
+        if (el.type === 'text') {
+          // Preload Google Font before rendering text element
+          if (el.fontFamily) {
+            await loadGoogleFont(el.fontFamily);
           }
-          if (nearCenterY) {
-            node!.y(centerY - (node!.height() * (node!.scaleY() || 1)) / 2);
+          if (!isMounted) return;
+
+          const textObj = new IText(el.text || 'Your Text', {
+            left: absLeft,
+            top: absTop,
+            fontSize: el.fontSize || 24,
+            fontFamily: el.fontFamily || 'Montserrat',
+            fill: el.fill || '#111111',
+            fontWeight: el.fontStyle === 'bold' ? 'bold' : 'normal',
+            fontStyle: el.fontStyle === 'italic' ? 'italic' : 'normal',
+            textAlign: el.align || 'center',
+            charSpacing: (el.letterSpacing || 0) * 50,
+            angle: el.rotation || 0,
+            scaleX: el.scaleX || 1,
+            scaleY: el.scaleY || 1,
+            opacity: el.opacity ?? 1,
+            selectable: !el.locked,
+            evented: !el.locked,
+            lockMovementX: !!el.locked,
+            lockMovementY: !!el.locked,
+            lockRotation: !!el.locked,
+            lockScalingX: !!el.locked,
+            lockScalingY: !!el.locked,
+            name: `element-${el.id}`,
+            data: { id: el.id },
+          });
+
+          canvas.add(textObj);
+        } else if (el.type === 'image' && el.src) {
+          let cachedImg = imageCacheRef.current.get(el.src);
+          if (!cachedImg) {
+            try {
+              cachedImg = await loadSafeImage(el.src);
+              imageCacheRef.current.set(el.src, cachedImg);
+            } catch (err) {
+              console.warn('Failed to load design element image:', el.src, err);
+            }
           }
-        });
+          if (!isMounted) return;
 
-        // Drag end: commit updates
-        node.on('dragend', () => {
-          setSnapX(false);
-          setSnapY(false);
-          onUpdateElement(el.id, {
-            x: Math.round(node!.x()),
-            y: Math.round(node!.y()),
-          });
-          if (onCommitHistory) onCommitHistory();
-        });
+          if (cachedImg) {
+            const naturalW = cachedImg.naturalWidth || el.width;
+            const naturalH = cachedImg.naturalHeight || el.height;
+            const baseScaleX = (el.width / naturalW) * (el.scaleX || 1);
+            const baseScaleY = (el.height / naturalH) * (el.scaleY || 1);
 
-        // Transform end: commit updates
-        node.on('transformend', () => {
-          const scaleX = node!.scaleX();
-          const scaleY = node!.scaleY();
-          const rotation = Math.round(node!.rotation());
+            const imgObj = new FabricImage(cachedImg, {
+              left: absLeft,
+              top: absTop,
+              scaleX: baseScaleX,
+              scaleY: baseScaleY,
+              angle: el.rotation || 0,
+              opacity: el.opacity ?? 1,
+              selectable: !el.locked,
+              evented: !el.locked,
+              lockMovementX: !!el.locked,
+              lockMovementY: !!el.locked,
+              lockRotation: !!el.locked,
+              lockScalingX: !!el.locked,
+              lockScalingY: !!el.locked,
+              name: `element-${el.id}`,
+              data: { id: el.id },
+            });
 
-          onUpdateElement(el.id, {
-            x: Math.round(node!.x()),
-            y: Math.round(node!.y()),
-            rotation,
-            scaleX,
-            scaleY,
-          });
-          if (onCommitHistory) onCommitHistory();
-        });
-
-        printGroup.add(node);
-
-        if (el.id === selectedElementId) {
-          selectedNode = node;
+            canvas.add(imgObj);
+          }
         }
       }
-    });
 
-    // Attach transformer to selected node
-    if (selectedNode) {
-      tr.nodes([selectedNode]);
-      tr.moveToTop();
+      // Synchronize active selection
+      if (selectedElementId) {
+        const targetObj = canvas
+          .getObjects()
+          .find((o) => (o as any).data?.id === selectedElementId);
+        if (targetObj) {
+          isInternalUpdatingRef.current = true;
+          canvas.setActiveObject(targetObj);
+          isInternalUpdatingRef.current = false;
+        }
+      } else {
+        isInternalUpdatingRef.current = true;
+        canvas.discardActiveObject();
+        isInternalUpdatingRef.current = false;
+      }
+
+      canvas.requestRenderAll();
+    };
+
+    renderElementsAsync();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [elements, printArea]);
+
+  // 5. Synchronize external selectedElementId changes
+  useEffect(() => {
+    const canvas = fabricRef.current;
+    if (!canvas || isInternalUpdatingRef.current) return;
+
+    if (selectedElementId) {
+      const obj = canvas
+        .getObjects()
+        .find((o) => (o as any).data?.id === selectedElementId);
+      if (obj && canvas.getActiveObject() !== obj) {
+        isInternalUpdatingRef.current = true;
+        canvas.setActiveObject(obj);
+        canvas.requestRenderAll();
+        isInternalUpdatingRef.current = false;
+      }
     } else {
-      tr.nodes([]);
+      if (canvas.getActiveObject()) {
+        isInternalUpdatingRef.current = true;
+        canvas.discardActiveObject();
+        canvas.requestRenderAll();
+        isInternalUpdatingRef.current = false;
+      }
     }
+  }, [selectedElementId]);
 
-    layer.batchDraw();
-  }, [elements, selectedElementId, printArea]);
+  // 6. Expose exportPreviewDataUrl with Fabric composite export
+  useEffect(() => {
+    if (onExportPreviewRef) {
+      onExportPreviewRef.current = async () => {
+        try {
+          // Generate high-definition composite preview with base product mockup as Layer 1
+          const previewResult = await generateProductPreview({
+            product,
+            selectedColor,
+            activeSide,
+            view: activeView,
+            printArea,
+            elements,
+          });
+          if (previewResult.dataUrl) {
+            return previewResult.dataUrl;
+          }
+        } catch (err) {
+          console.warn('Dedicated preview generator note, using Fabric canvas export:', err);
+        }
+
+        const canvas = fabricRef.current;
+        if (!canvas) return '';
+
+        // Temporarily hide guides and selection for clean export
+        const guideObjects = canvas
+          .getObjects()
+          .filter((o) => (o as any).name?.startsWith('guide-'));
+        const activeObj = canvas.getActiveObject();
+
+        guideObjects.forEach((g) => (g.visible = false));
+        canvas.discardActiveObject();
+        canvas.renderAll();
+
+        let dataUrl = '';
+        try {
+          dataUrl = canvas.toDataURL({
+            format: 'png',
+            multiplier: 2,
+          });
+        } catch (e) {
+          console.warn('canvas.toDataURL failed:', e);
+        }
+
+        // Restore guides and selection
+        guideObjects.forEach((g) => (g.visible = true));
+        if (activeObj) {
+          canvas.setActiveObject(activeObj);
+        }
+        canvas.requestRenderAll();
+
+        return dataUrl;
+      };
+    }
+  }, [onExportPreviewRef, product, selectedColor, activeSide, activeView, printArea, elements]);
 
   return (
     <div
@@ -624,11 +666,12 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
           cursor: isPanning ? 'grabbing' : zoom > 1 ? 'grab' : 'default',
         }}
       >
-        {/* Konva Canvas Container hosting Base Layer, Design Layer, and Guide Layer */}
-        <div
-          ref={containerRef}
+        {/* Fabric.js HTML5 Canvas Container */}
+        <canvas
+          ref={canvasElRef}
+          width={STAGE_WIDTH}
+          height={STAGE_HEIGHT}
           className="absolute inset-0 z-10"
-          style={{ width: `${STAGE_WIDTH}px`, height: `${STAGE_HEIGHT}px` }}
         />
 
         {/* Snap-to-center guidelines */}
@@ -660,7 +703,7 @@ export const CanvasEditor: React.FC<CanvasEditorProps> = ({
       {/* Helper interaction chip */}
       <div className="absolute bottom-4 right-4 z-30 hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/90 backdrop-blur-sm border border-[#e2e8f0] text-[11px] text-[#555f6f] shadow-xs">
         <Move className="w-3 h-3 text-[#0058be]" />
-        <span>Click to select • Drag handles to rotate & resize</span>
+        <span>Fabric.js Editor • Click to select • Drag handles to rotate & resize</span>
       </div>
     </div>
   );

@@ -42,6 +42,7 @@ export interface Product {
   featured?: boolean;
   stock: number;
   createdAt: string;
+  customizationConfig?: GenericCustomizationConfig;
   details: {
     material: string;
     weight: string;
@@ -68,8 +69,49 @@ export interface AuthResponse {
   user: User;
 }
 
-export type DesignSide = 'front' | 'back' | 'left' | 'right';
+export type DesignSide = 'front' | 'back' | 'left' | 'right' | string;
 export type DesignElementType = 'text' | 'image';
+export type PrintableAreaShape = 'rectangle' | 'rounded' | 'circle';
+
+export interface PrintableAreaDefinition {
+  x: number; // percentage (0-100) or virtual pixels (e.g. 135)
+  y: number; // percentage (0-100) or virtual pixels (e.g. 110)
+  width: number; // percentage or px
+  height: number; // percentage or px
+  isPercentage?: boolean; // whether coordinates are normalized 0-100
+  shape?: PrintableAreaShape;
+  borderRadius?: number;
+  safeMargin?: number;
+}
+
+export interface ProductCustomizationView {
+  id: string; // e.g. 'front', 'back', 'wrap', 'left_sleeve', 'top_lid', 'case_back'
+  name: string; // e.g. 'Front View', 'Back View', 'Panoramic Wrap', 'Left Sleeve'
+  mockupUrl: string; // Blank product mockup image for this angle/view
+  mockupPublicId?: string;
+  overlayUrl?: string; // Optional texture or mask overlay
+  overlayPublicId?: string;
+  printableArea: PrintableAreaDefinition;
+  allowedElementTypes?: ('text' | 'image')[];
+  maxElements?: number;
+  description?: string;
+}
+
+export interface GenericCustomizationConfig {
+  enabled: boolean;
+  previewType?: 'canvas_2d' | '3d_mockup' | 'flat';
+  views: ProductCustomizationView[];
+  colorTinting?: {
+    enabled: boolean;
+    blendMode?: 'multiply' | 'overlay' | 'source-atop';
+    opacity?: number;
+  };
+  allowedSizes?: string[];
+  pricingPerView?: number;
+  extraViewPrice?: number;
+  pricingPerElement?: number;
+  instructions?: string;
+}
 
 export interface DesignElement {
   id: string;
@@ -112,17 +154,21 @@ export interface SideDesignState {
 
 export interface ProductCustomizationConfig {
   sides: {
-    front: SideDesignState;
-    back: SideDesignState;
+    front?: SideDesignState;
+    back?: SideDesignState;
     [key: string]: SideDesignState | undefined;
   };
+  views?: Record<string, SideDesignState>;
+  customizationConfig?: GenericCustomizationConfig;
   activeSide: DesignSide;
+  activeViewId?: string;
   selectedColorHex: string;
   selectedSize: string;
   previewFrontUrl?: string;
   previewFrontPublicId?: string;
   previewBackUrl?: string;
   previewBackPublicId?: string;
+  previewsByView?: Record<string, string>;
   lastSavedAt?: string;
 }
 

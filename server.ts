@@ -29,6 +29,7 @@ import adminRoutes from './backend/routes/adminRoutes';
 import notificationRoutes from './backend/routes/notificationRoutes';
 import publicRoutes from './backend/routes/publicRoutes';
 import uploadRoutes from './backend/routes/uploadRoutes';
+import fontRoutes from './backend/routes/fontRoutes';
 
 // Load environment variables
 dotenv.config();
@@ -73,6 +74,7 @@ export async function createExpressApp(ioInstance?: SocketIOServer) {
   app.use('/api/admin', adminRoutes);
   app.use('/api/notifications', notificationRoutes);
   app.use('/api/upload', uploadRoutes);
+  app.use('/api/fonts', fontRoutes);
   app.use('/api', publicRoutes);
 
   // Safe image proxy to prevent tainted canvas in client-side preview exports

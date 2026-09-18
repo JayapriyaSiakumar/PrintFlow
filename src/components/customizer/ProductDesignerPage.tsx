@@ -19,6 +19,7 @@ import {
   Product,
   ProductColor,
   ProductCustomizationConfig,
+  ProductCustomizationView,
   SideDesignState,
   Size,
 } from '../../types';
@@ -27,11 +28,20 @@ import { CanvasEditor } from './CanvasEditor';
 import { ToolPanel } from './ToolPanel';
 import { PreviewModal } from './PreviewModal';
 import { PrintQualityWarning } from './PrintQualityWarning';
-import { getProductPrintArea, PrintableAreaConfig, EditorHistoryState } from './types';
+import { getProductPrintArea, PrintableAreaConfig } from './types';
 import { generateProductPreview } from '../../utils/previewGenerator';
+import {
+  getEffectiveCustomizationConfig,
+  resolvePrintableAreaPixels,
+} from '../../utils/customizationEngine';
 
 interface ProductDesignerPageProps {
   onClose?: () => void;
+}
+
+interface EditorHistorySnapshot {
+  viewsElements: Record<string, DesignElement[]>;
+  activeViewId: string;
 }
 
 export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClose }) => {
@@ -74,43 +84,76 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
     };
   }, [designingProduct, products]);
 
+  // Dynamic Customization Configuration (Derived data-driven for ANY product)
+  const customizationConfig = useMemo(
+    () => getEffectiveCustomizationConfig(product),
+    [product]
+  );
+  const views: ProductCustomizationView[] = customizationConfig.views;
+
+  // Active View / Surface (Front, Back, Wrap, Sleeve, etc.)
+  const [activeViewId, setActiveViewId] = useState<string>(() => views[0]?.id || 'front');
+
+  // Keep activeViewId synchronized with available views
+  useEffect(() => {
+    if (views.length > 0 && !views.some((v) => v.id === activeViewId)) {
+      setActiveViewId(views[0].id);
+    }
+  }, [views, activeViewId]);
+
+  // Current view definition
+  const currentView = useMemo(
+    () => views.find((v) => v.id === activeViewId) || views[0],
+    [views, activeViewId]
+  );
+
   // Variant state
-  const [selectedColor, setSelectedColor] = useState<ProductColor>(product.colors[0] || { name: 'White', hex: '#ffffff' });
-  const [selectedSize, setSelectedSize] = useState<Size>(product.sizes[1] || product.sizes[0] || 'M');
+  const [selectedColor, setSelectedColor] = useState<ProductColor>(
+    product.colors[0] || { name: 'Standard', hex: '#ffffff' }
+  );
+  const [selectedSize, setSelectedSize] = useState<Size>(
+    product.sizes[1] || product.sizes[0] || 'Standard'
+  );
   const [quantity, setQuantity] = useState<number>(1);
 
-  // Active Side: Front vs Back
-  const [activeSide, setActiveSide] = useState<DesignSide>('front');
+  // Generic data-driven elements mapped by view ID (e.g. { 'front': [...], 'back': [...], 'wrap': [...] })
+  const [viewsElements, setViewsElements] = useState<Record<string, DesignElement[]>>({});
 
-  // Independent side element state
-  const [frontElements, setFrontElements] = useState<DesignElement[]>([]);
-  const [backElements, setBackElements] = useState<DesignElement[]>([]);
+  // Elements on current active view
+  const currentElements = viewsElements[activeViewId] || [];
 
   // Selection
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
 
-  // Undo / Redo History Stack
-  const [history, setHistory] = useState<EditorHistoryState[]>([]);
+  // Undo / Redo History Stack (Generic across all surfaces)
+  const [history, setHistory] = useState<EditorHistorySnapshot[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
 
-  // Modals & Snapshot Ref
+  // Modals & Dynamic Snapshot States
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState<boolean>(false);
-  const [previewFrontUrl, setPreviewFrontUrl] = useState<string>('');
-  const [previewBackUrl, setPreviewBackUrl] = useState<string>('');
+  const [viewsPreviews, setViewsPreviews] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isAddingToCart, setIsAddingToCart] = useState<boolean>(false);
 
   // Ref to trigger stage snapshot
   const exportPreviewRef = useRef<(() => Promise<string>) | null>(null);
 
-  // Printable area configuration based on product and side
-  const printArea: PrintableAreaConfig = useMemo(
-    () => getProductPrintArea(product, activeSide),
-    [product, activeSide]
-  );
-
-  // Elements on current active side
-  const currentElements = activeSide === 'front' ? frontElements : backElements;
+  // Data-driven printable area configuration calculated from product's view config
+  const printArea: PrintableAreaConfig = useMemo(() => {
+    if (currentView?.printableArea) {
+      const resolved = resolvePrintableAreaPixels(currentView.printableArea);
+      return {
+        width: resolved.width,
+        height: resolved.height,
+        top: resolved.y,
+        left: resolved.x,
+        safeMargin: resolved.safeMargin,
+        shape: resolved.shape,
+        borderRadius: resolved.borderRadius,
+      };
+    }
+    return getProductPrintArea(product, activeViewId);
+  }, [currentView, product, activeViewId]);
 
   // Initialize or re-hydrate when editingCustomDesign changes
   useEffect(() => {
@@ -128,40 +171,45 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
       // Restore elements from designConfig or sides
       const cfgSides = editingCustomDesign.designConfig?.sides || editingCustomDesign.sides;
       if (cfgSides) {
-        if (cfgSides.front?.elements) setFrontElements(cfgSides.front.elements);
-        if (cfgSides.back?.elements) setBackElements(cfgSides.back.elements);
+        const restored: Record<string, DesignElement[]> = {};
+        Object.entries(cfgSides).forEach(([key, sideData]: [string, any]) => {
+          if (sideData?.elements && Array.isArray(sideData.elements)) {
+            restored[key] = sideData.elements;
+          }
+        });
+        setViewsElements(restored);
       } else if (editingCustomDesign.designText) {
         // Fallback for legacy simple designs
-        setFrontElements([
-          {
-            id: 'legacy-txt-1',
-            type: 'text',
-            text: editingCustomDesign.designText,
-            fontSize: 28,
-            fontFamily: editingCustomDesign.designFont || 'Montserrat',
-            fill: editingCustomDesign.designTextColor || '#ffffff',
-            align: 'center',
-            x: 40,
-            y: 120,
-            width: 200,
-            height: 38,
-            rotation: 0,
-            scaleX: 1,
-            scaleY: 1,
-          },
-        ]);
+        const firstViewId = views[0]?.id || 'front';
+        setViewsElements({
+          [firstViewId]: [
+            {
+              id: 'legacy-txt-1',
+              type: 'text',
+              text: editingCustomDesign.designText,
+              fontSize: 28,
+              fontFamily: editingCustomDesign.designFont || 'Montserrat',
+              fill: editingCustomDesign.designTextColor || '#ffffff',
+              align: 'center',
+              x: 40,
+              y: 120,
+              width: 200,
+              height: 38,
+              rotation: 0,
+              scaleX: 1,
+              scaleY: 1,
+            },
+          ],
+        });
       }
     }
-  }, [editingCustomDesign, product]);
+  }, [editingCustomDesign, product, views]);
 
   // Push history snapshot
-  const pushHistory = (front: DesignElement[], back: DesignElement[], side: DesignSide) => {
-    const snapshot: EditorHistoryState = {
-      sides: {
-        front: { elements: JSON.parse(JSON.stringify(front)) },
-        back: { elements: JSON.parse(JSON.stringify(back)) },
-      },
-      activeSide: side,
+  const pushHistory = (newViewsElements: Record<string, DesignElement[]>, viewId: string) => {
+    const snapshot: EditorHistorySnapshot = {
+      viewsElements: JSON.parse(JSON.stringify(newViewsElements)),
+      activeViewId: viewId,
     };
 
     setHistory((prev) => {
@@ -176,9 +224,8 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
     if (historyIndex > 0) {
       const prevIndex = historyIndex - 1;
       const state = history[prevIndex];
-      setFrontElements(state.sides.front.elements);
-      setBackElements(state.sides.back.elements);
-      setActiveSide(state.activeSide);
+      setViewsElements(state.viewsElements);
+      setActiveViewId(state.activeViewId);
       setHistoryIndex(prevIndex);
       setSelectedElementId(null);
     }
@@ -189,49 +236,40 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
     if (historyIndex < history.length - 1) {
       const nextIndex = historyIndex + 1;
       const state = history[nextIndex];
-      setFrontElements(state.sides.front.elements);
-      setBackElements(state.sides.back.elements);
-      setActiveSide(state.activeSide);
+      setViewsElements(state.viewsElements);
+      setActiveViewId(state.activeViewId);
       setHistoryIndex(nextIndex);
       setSelectedElementId(null);
     }
   };
 
-  // Element actions on active side
+  // Element actions on active view
   const handleAddElement = (newEl: DesignElement) => {
-    if (activeSide === 'front') {
-      const updated = [...frontElements, newEl];
-      setFrontElements(updated);
-      pushHistory(updated, backElements, 'front');
-    } else {
-      const updated = [...backElements, newEl];
-      setBackElements(updated);
-      pushHistory(frontElements, updated, 'back');
-    }
+    setViewsElements((prev) => {
+      const current = prev[activeViewId] || [];
+      const updated = [...current, newEl];
+      const nextState = { ...prev, [activeViewId]: updated };
+      pushHistory(nextState, activeViewId);
+      return nextState;
+    });
   };
 
   const handleUpdateElement = (id: string, updates: Partial<DesignElement>) => {
-    if (activeSide === 'front') {
-      setFrontElements((prev) =>
-        prev.map((el) => (el.id === id ? { ...el, ...updates } : el))
-      );
-    } else {
-      setBackElements((prev) =>
-        prev.map((el) => (el.id === id ? { ...el, ...updates } : el))
-      );
-    }
+    setViewsElements((prev) => {
+      const current = prev[activeViewId] || [];
+      const updated = current.map((el) => (el.id === id ? { ...el, ...updates } : el));
+      return { ...prev, [activeViewId]: updated };
+    });
   };
 
   const handleDeleteElement = (id: string) => {
-    if (activeSide === 'front') {
-      const updated = frontElements.filter((el) => el.id !== id);
-      setFrontElements(updated);
-      pushHistory(updated, backElements, 'front');
-    } else {
-      const updated = backElements.filter((el) => el.id !== id);
-      setBackElements(updated);
-      pushHistory(frontElements, updated, 'back');
-    }
+    setViewsElements((prev) => {
+      const current = prev[activeViewId] || [];
+      const updated = current.filter((el) => el.id !== id);
+      const nextState = { ...prev, [activeViewId]: updated };
+      pushHistory(nextState, activeViewId);
+      return nextState;
+    });
     if (selectedElementId === id) setSelectedElementId(null);
   };
 
@@ -251,26 +289,22 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
   };
 
   const handleReorderElements = (newElements: DesignElement[]) => {
-    if (activeSide === 'front') {
-      setFrontElements(newElements);
-      pushHistory(newElements, backElements, 'front');
-    } else {
-      setBackElements(newElements);
-      pushHistory(frontElements, newElements, 'back');
-    }
+    setViewsElements((prev) => {
+      const nextState = { ...prev, [activeViewId]: newElements };
+      pushHistory(nextState, activeViewId);
+      return nextState;
+    });
   };
 
-  // Clear current side canvas
+  // Clear current view canvas
   const handleClearSide = () => {
     if (currentElements.length === 0) return;
-    if (window.confirm(`Clear all design elements on the ${activeSide} side?`)) {
-      if (activeSide === 'front') {
-        setFrontElements([]);
-        pushHistory([], backElements, 'front');
-      } else {
-        setBackElements([]);
-        pushHistory(frontElements, [], 'back');
-      }
+    if (window.confirm(`Clear all design elements on ${currentView?.name || activeViewId}?`)) {
+      setViewsElements((prev) => {
+        const nextState = { ...prev, [activeViewId]: [] };
+        pushHistory(nextState, activeViewId);
+        return nextState;
+      });
       setSelectedElementId(null);
     }
   };
@@ -283,52 +317,63 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
     return 0;
   }, [quantity]);
 
-  // Base price + customization fee ($3.50 if back is also customized)
-  const hasBackCustomization = backElements.length > 0;
-  const printFeePerItem = hasBackCustomization ? 3.50 : 0;
+  // Base price + customization fee based on number of customized surfaces
+  const customizedSurfacesCount = useMemo(() => {
+    return (Object.values(viewsElements) as DesignElement[][]).filter((elems) => elems && elems.length > 0).length;
+  }, [viewsElements]);
+
+  const extraSurfacesCount = Math.max(0, customizedSurfacesCount - 1);
+  const extraSurfacePrice = customizationConfig.pricing?.extraViewPrice ?? 3.5;
+  const printFeePerItem = extraSurfacesCount * extraSurfacePrice;
   const baseItemPrice = product.price + printFeePerItem;
   const unitPrice = +(baseItemPrice * (1 - volumeDiscountPercent)).toFixed(2);
   const totalPrice = +(unitPrice * quantity).toFixed(2);
 
-  // Helper to ensure full layered preview (product image as base layer) for any side
-  const ensureLayeredPreview = async (side: DesignSide): Promise<string> => {
-    const isFront = side === 'front';
-    const sideElements = isFront ? frontElements : backElements;
-    const sidePrintArea = getProductPrintArea(product, side);
+  // Helper to ensure full layered preview (product image as base layer) for any view
+  const ensureLayeredPreview = async (viewId: string): Promise<string> => {
+    const targetView = views.find((v) => v.id === viewId) || views[0];
+    const sideElements = viewsElements[viewId] || [];
+    const sidePrintArea = targetView?.printableArea
+      ? resolvePrintableAreaPixels(targetView.printableArea)
+      : getProductPrintArea(product, viewId);
 
     try {
       const res = await generateProductPreview({
         product,
         selectedColor,
-        activeSide: side,
+        activeSide: viewId,
+        view: targetView,
         printArea: sidePrintArea,
         elements: sideElements,
       });
       if (res.dataUrl) {
-        if (isFront) setPreviewFrontUrl(res.dataUrl);
-        else setPreviewBackUrl(res.dataUrl);
+        setViewsPreviews((prev) => ({ ...prev, [viewId]: res.dataUrl }));
         return res.dataUrl;
       }
     } catch (e) {
       console.warn('generateProductPreview error:', e);
     }
-    return '';
+    return viewsPreviews[viewId] || targetView?.mockupUrl || product.image || '';
   };
 
-  // Handle Side Switch with Auto-Snapshot
-  const handleSwitchSide = async (side: DesignSide) => {
-    if (side === activeSide) return;
-    await ensureLayeredPreview(activeSide);
-    setActiveSide(side);
+  // Handle View / Surface Switch with Auto-Snapshot
+  const handleSwitchSide = async (viewId: string) => {
+    if (viewId === activeViewId) return;
+    await ensureLayeredPreview(activeViewId);
+    setActiveViewId(viewId);
     setSelectedElementId(null);
   };
 
   // Open Realistic Preview Modal with Guaranteed Base Product Image
   const handleOpenPreview = async () => {
     // Generate active side snapshot with product image as Layer 1
-    await ensureLayeredPreview(activeSide);
-    // Also generate opposite side in background so when switching in modal it's ready
-    ensureLayeredPreview(activeSide === 'front' ? 'back' : 'front');
+    await ensureLayeredPreview(activeViewId);
+    // Also generate previews for other views that have customized elements
+    for (const v of views) {
+      if (v.id !== activeViewId && (viewsElements[v.id]?.length || 0) > 0) {
+        ensureLayeredPreview(v.id);
+      }
+    }
     setIsPreviewModalOpen(true);
   };
 
@@ -336,26 +381,38 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
   const handleSaveToAccount = async () => {
     setIsSaving(true);
     try {
-      const snapFront = (await ensureLayeredPreview('front')) || previewFrontUrl;
-      const snapBack = (await ensureLayeredPreview('back')) || previewBackUrl;
+      const activeSnap = (await ensureLayeredPreview(activeViewId)) || viewsPreviews[activeViewId] || product.image;
+
+      // Compile sides record with snapshots
+      const compiledSides: Record<string, SideDesignState> = {};
+      for (const v of views) {
+        const vElems = viewsElements[v.id] || [];
+        const vSnap = viewsPreviews[v.id] || (vElems.length > 0 ? await ensureLayeredPreview(v.id) : v.mockupUrl || product.image);
+        compiledSides[v.id] = {
+          elements: vElems,
+          previewDataUrl: vSnap,
+        };
+      }
 
       const designConfig: ProductCustomizationConfig = {
-        sides: {
-          front: { elements: frontElements, previewDataUrl: snapFront || product.image },
-          back: { elements: backElements, previewDataUrl: snapBack || snapFront || product.image },
-        },
-        activeSide,
+        sides: compiledSides as any,
+        activeSide: activeViewId,
         selectedColorHex: selectedColor.hex,
         selectedSize,
-        previewFrontUrl: snapFront || product.image,
-        previewBackUrl: snapBack || snapFront || product.image,
+        previewFrontUrl: compiledSides['front']?.previewDataUrl || activeSnap,
+        previewBackUrl: compiledSides['back']?.previewDataUrl || activeSnap,
         lastSavedAt: new Date().toISOString(),
       };
 
-      const primaryText =
-        frontElements.find((e) => e.type === 'text')?.text ||
-        backElements.find((e) => e.type === 'text')?.text ||
-        'Custom Design';
+      // Extract primary text for title
+      let primaryText = 'Custom Design';
+      for (const elems of Object.values(viewsElements) as DesignElement[][]) {
+        const found = elems.find((e) => e.type === 'text')?.text;
+        if (found) {
+          primaryText = found;
+          break;
+        }
+      }
 
       await saveCustomDesign({
         name: `${product.name} Custom`,
@@ -365,11 +422,11 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
         selectedColorHex: selectedColor.hex,
         selectedSize,
         designText: primaryText,
-        placement: activeSide,
-        previewDataUrl: snapFront || product.image,
-        previewFrontUrl: snapFront || product.image,
-        previewBackUrl: snapBack || snapFront || product.image,
-        sides: designConfig.sides as any,
+        placement: activeViewId,
+        previewDataUrl: activeSnap,
+        previewFrontUrl: compiledSides['front']?.previewDataUrl || activeSnap,
+        previewBackUrl: compiledSides['back']?.previewDataUrl || activeSnap,
+        sides: compiledSides as any,
         designConfig,
       });
     } catch (err: any) {
@@ -383,24 +440,38 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
   const handleAddToCart = async () => {
     setIsAddingToCart(true);
     try {
-      const snapFront = (await ensureLayeredPreview('front')) || previewFrontUrl;
-      const snapBack = (await ensureLayeredPreview('back')) || previewBackUrl;
+      const activeSnap = (await ensureLayeredPreview(activeViewId)) || viewsPreviews[activeViewId] || product.image;
 
-      const primaryText =
-        frontElements.find((e) => e.type === 'text')?.text ||
-        backElements.find((e) => e.type === 'text')?.text ||
-        '';
+      const compiledSides: Record<string, SideDesignState> = {};
+      for (const v of views) {
+        const vElems = viewsElements[v.id] || [];
+        const vSnap = viewsPreviews[v.id] || (vElems.length > 0 ? await ensureLayeredPreview(v.id) : v.mockupUrl || product.image);
+        compiledSides[v.id] = {
+          elements: vElems,
+          previewDataUrl: vSnap,
+        };
+      }
+
+      let primaryText = '';
+      let textColor = '#ffffff';
+      let fontFamily = 'Montserrat';
+      for (const elems of Object.values(viewsElements) as DesignElement[][]) {
+        const textEl = elems.find((e) => e.type === 'text');
+        if (textEl) {
+          primaryText = textEl.text;
+          textColor = textEl.fill || '#ffffff';
+          fontFamily = textEl.fontFamily || 'Montserrat';
+          break;
+        }
+      }
 
       const designConfig: ProductCustomizationConfig = {
-        sides: {
-          front: { elements: frontElements, previewDataUrl: snapFront || product.image },
-          back: { elements: backElements, previewDataUrl: snapBack || snapFront || product.image },
-        },
-        activeSide,
+        sides: compiledSides as any,
+        activeSide: activeViewId,
         selectedColorHex: selectedColor.hex,
         selectedSize,
-        previewFrontUrl: snapFront || product.image,
-        previewBackUrl: snapBack || snapFront || product.image,
+        previewFrontUrl: compiledSides['front']?.previewDataUrl || activeSnap,
+        previewBackUrl: compiledSides['back']?.previewDataUrl || activeSnap,
         lastSavedAt: new Date().toISOString(),
       };
 
@@ -408,7 +479,7 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
         productId: product.id,
         product: {
           ...product,
-          image: snapFront || product.image,
+          image: activeSnap || product.image,
         },
         size: selectedSize,
         color: selectedColor,
@@ -416,12 +487,12 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
         unitPrice,
         customDesign: {
           text: primaryText,
-          textColor: frontElements.find((e) => e.type === 'text')?.fill || '#ffffff',
-          fontFamily: frontElements.find((e) => e.type === 'text')?.fontFamily || 'Montserrat',
-          placement: hasBackCustomization ? 'back' : 'front',
-          previewDataUrl: snapFront || product.image,
-          previewDataUrlBack: snapBack || previewBackUrl,
-          sides: designConfig.sides,
+          textColor,
+          fontFamily,
+          placement: activeViewId,
+          previewDataUrl: activeSnap,
+          previewDataUrlBack: compiledSides['back']?.previewDataUrl || viewsPreviews['back'],
+          sides: compiledSides as any,
           designConfig,
         },
       });
@@ -473,55 +544,46 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
 
         {/* Center: Surface / Side Switcher & History Actions */}
         <div className="flex items-center gap-3">
-          {/* Surface Pill Switcher (Front | Back) */}
-          <div
-            id="surface-side-switcher"
-            className="flex items-center p-1 bg-[#f0f4fc] rounded-full border border-[#dce2ee] shadow-xs"
-          >
-            <button
-              id="btn-side-front"
-              type="button"
-              onClick={() => handleSwitchSide('front')}
-              className={`px-3.5 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                activeSide === 'front'
-                  ? 'bg-[#0058be] text-white shadow-xs'
-                  : 'text-[#555f6f] hover:text-[#1a1c1c]'
-              }`}
+          {/* Surface Pill Switcher (Dynamic for any product views: Front, Back, Wrap, Left, Right, etc.) */}
+          {views.length > 1 ? (
+            <div
+              id="surface-side-switcher"
+              className="flex items-center p-1 bg-[#f0f4fc] rounded-full border border-[#dce2ee] shadow-xs max-w-[280px] sm:max-w-none overflow-x-auto scrollbar-none"
             >
-              <span>Front</span>
-              {frontElements.length > 0 && (
-                <span
-                  className={`w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-semibold ${
-                    activeSide === 'front' ? 'bg-white text-[#0058be]' : 'bg-[#0058be] text-white'
-                  }`}
-                >
-                  {frontElements.length}
-                </span>
-              )}
-            </button>
-
-            <button
-              id="btn-side-back"
-              type="button"
-              onClick={() => handleSwitchSide('back')}
-              className={`px-3.5 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                activeSide === 'back'
-                  ? 'bg-[#0058be] text-white shadow-xs'
-                  : 'text-[#555f6f] hover:text-[#1a1c1c]'
-              }`}
-            >
-              <span>Back</span>
-              {backElements.length > 0 && (
-                <span
-                  className={`w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-semibold ${
-                    activeSide === 'back' ? 'bg-white text-[#0058be]' : 'bg-[#0058be] text-white'
-                  }`}
-                >
-                  {backElements.length}
-                </span>
-              )}
-            </button>
-          </div>
+              {views.map((v) => {
+                const count = (viewsElements[v.id] || []).length;
+                const isActive = activeViewId === v.id;
+                return (
+                  <button
+                    key={v.id}
+                    id={`btn-side-${v.id}`}
+                    type="button"
+                    onClick={() => handleSwitchSide(v.id)}
+                    className={`px-3.5 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+                      isActive
+                        ? 'bg-[#0058be] text-white shadow-xs'
+                        : 'text-[#555f6f] hover:text-[#1a1c1c]'
+                    }`}
+                  >
+                    <span>{v.name}</span>
+                    {count > 0 && (
+                      <span
+                        className={`w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-semibold ${
+                          isActive ? 'bg-white text-[#0058be]' : 'bg-[#0058be] text-white'
+                        }`}
+                      >
+                        {count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-xs font-bold text-[#555f6f] px-3.5 py-1 bg-[#f0f4fc] rounded-full border border-[#dce2ee]">
+              {views[0]?.name || 'Single Surface'}
+            </div>
+          )}
 
           {/* Undo / Redo Controls */}
           <div className="hidden sm:flex items-center gap-1">
@@ -530,7 +592,7 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
               type="button"
               onClick={handleUndo}
               disabled={historyIndex <= 0}
-              className="p-2 rounded-lg border border-[#e2e8f0] text-[#555f6f] hover:text-[#1a1c1c] hover:bg-gray-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+              className="p-2 rounded-lg border border-[#e2e8f0] text-[#555f6f] hover:text-[#1a1c1c] hover:bg-gray-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors cursor-pointer"
               title="Undo (Ctrl+Z)"
             >
               <RotateCcw className="w-3.5 h-3.5" />
@@ -541,7 +603,7 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
               type="button"
               onClick={handleRedo}
               disabled={historyIndex >= history.length - 1}
-              className="p-2 rounded-lg border border-[#e2e8f0] text-[#555f6f] hover:text-[#1a1c1c] hover:bg-gray-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+              className="p-2 rounded-lg border border-[#e2e8f0] text-[#555f6f] hover:text-[#1a1c1c] hover:bg-gray-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors cursor-pointer"
               title="Redo (Ctrl+Y)"
             >
               <RotateCw className="w-3.5 h-3.5" />
@@ -552,8 +614,8 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
               type="button"
               onClick={handleClearSide}
               disabled={currentElements.length === 0}
-              className="p-2 rounded-lg border border-[#e2e8f0] text-[#727785] hover:text-[#ba1a1a] hover:bg-red-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-              title={`Clear ${activeSide} side`}
+              className="p-2 rounded-lg border border-[#e2e8f0] text-[#727785] hover:text-[#ba1a1a] hover:bg-red-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors cursor-pointer"
+              title={`Clear ${currentView?.name || activeViewId}`}
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
@@ -591,7 +653,7 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
         <div className="lg:col-span-4 xl:col-span-3 h-full overflow-hidden flex flex-col">
           <ToolPanel
             product={product}
-            activeSide={activeSide}
+            activeSide={activeViewId}
             printArea={printArea}
             elements={currentElements}
             selectedElementId={selectedElementId}
@@ -618,15 +680,15 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
             <CanvasEditor
               product={product}
               selectedColor={selectedColor}
-              activeSide={activeSide}
+              activeSide={activeViewId}
+              activeView={currentView}
               printArea={printArea}
               elements={currentElements}
               selectedElementId={selectedElementId}
               onSelectElement={setSelectedElementId}
               onUpdateElement={handleUpdateElement}
               onCommitHistory={() => {
-                if (activeSide === 'front') pushHistory(frontElements, backElements, 'front');
-                else pushHistory(frontElements, backElements, 'back');
+                pushHistory(viewsElements, activeViewId);
               }}
               showGuides={true}
               onExportPreviewRef={exportPreviewRef}
@@ -640,27 +702,27 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
             {/* Header & Product Specs */}
             <div>
               <span className="text-[10px] font-bold tracking-wider text-[#0058be] uppercase bg-blue-50 px-2 py-0.5 rounded">
-                Custom Printing
+                {customizationConfig.printMethod || 'Custom Print'}
               </span>
               <h3 className="font-['Montserrat'] font-bold text-base text-[#1a1c1c] mt-1">
                 {product.name}
               </h3>
               <p className="text-xs text-[#555f6f] mt-0.5">
-                Printed using non-toxic pigment DTG inks on heavyweight cotton blank.
+                {product.description || 'Configurable customizable product.'}
               </p>
             </div>
 
             {/* Live Pricing Breakdown */}
             <div className="p-3.5 rounded-xl bg-[#f8fafc] border border-[#e2e8f0] space-y-2">
               <div className="flex justify-between items-baseline">
-                <span className="text-xs text-[#555f6f]">Base Garment Price:</span>
+                <span className="text-xs text-[#555f6f]">Base Item Price:</span>
                 <span className="font-semibold text-xs text-[#1a1c1c]">${product.price.toFixed(2)}</span>
               </div>
 
-              {hasBackCustomization && (
+              {extraSurfacesCount > 0 && (
                 <div className="flex justify-between items-baseline text-xs text-blue-700">
-                  <span>Back Print Surcharge:</span>
-                  <span className="font-semibold">+$3.50</span>
+                  <span>Extra Surface Print ({extraSurfacesCount}x):</span>
+                  <span className="font-semibold">+${printFeePerItem.toFixed(2)}</span>
                 </div>
               )}
 
@@ -674,7 +736,11 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
               <div className="pt-2 border-t border-[#e2e8f0] flex justify-between items-baseline">
                 <div>
                   <span className="font-bold text-xs text-[#1a1c1c] block">Unit Price:</span>
-                  <span className="text-[10px] text-[#727785]">Includes front & back prints</span>
+                  <span className="text-[10px] text-[#727785]">
+                    {customizedSurfacesCount <= 1
+                      ? 'Includes custom print'
+                      : `Includes ${customizedSurfacesCount} custom surfaces`}
+                  </span>
                 </div>
                 <div className="text-right">
                   <span className="font-['Montserrat'] font-bold text-lg text-[#0058be]">
@@ -686,51 +752,55 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
             </div>
 
             {/* Color Swatch Selector */}
-            <div>
-              <label className="text-xs font-bold text-[#555f6f] uppercase tracking-wider block mb-1.5">
-                Selected Blank Color
-              </label>
-              <div className="flex items-center gap-2">
-                {product.colors.map((c) => (
-                  <button
-                    key={c.name}
-                    type="button"
-                    onClick={() => setSelectedColor(c)}
-                    className={`w-7 h-7 rounded-full border-2 transition-all ${
-                      selectedColor.hex === c.hex
-                        ? 'border-[#0058be] ring-2 ring-[#0058be]/20 scale-110'
-                        : 'border-black/15 hover:scale-105'
-                    }`}
-                    style={{ backgroundColor: c.hex }}
-                    title={c.name}
-                  />
-                ))}
-                <span className="text-xs font-semibold text-[#1a1c1c] ml-1">{selectedColor.name}</span>
+            {product.colors && product.colors.length > 0 && (
+              <div>
+                <label className="text-xs font-bold text-[#555f6f] uppercase tracking-wider block mb-1.5">
+                  Color / Finish
+                </label>
+                <div className="flex items-center gap-2">
+                  {product.colors.map((c) => (
+                    <button
+                      key={c.name}
+                      type="button"
+                      onClick={() => setSelectedColor(c)}
+                      className={`w-7 h-7 rounded-full border-2 transition-all cursor-pointer ${
+                        selectedColor.hex === c.hex
+                          ? 'border-[#0058be] ring-2 ring-[#0058be]/20 scale-110'
+                          : 'border-black/15 hover:scale-105'
+                      }`}
+                      style={{ backgroundColor: c.hex }}
+                      title={c.name}
+                    />
+                  ))}
+                  <span className="text-xs font-semibold text-[#1a1c1c] ml-1">{selectedColor.name}</span>
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Size Selector */}
-            <div>
-              <label className="text-xs font-bold text-[#555f6f] uppercase tracking-wider block mb-1.5">
-                Size
-              </label>
-              <div className="flex flex-wrap gap-1.5">
-                {product.sizes.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => setSelectedSize(s)}
-                    className={`py-1 px-3 rounded-lg text-xs font-bold transition-all ${
-                      selectedSize === s
-                        ? 'bg-[#0058be] text-white'
-                        : 'bg-[#f0f4fc] text-[#1a1c1c] hover:bg-[#e2eaf8]'
-                    }`}
-                  >
-                    {s}
-                  </button>
-                ))}
+            {/* Size / Option Selector */}
+            {product.sizes && product.sizes.length > 0 && (
+              <div>
+                <label className="text-xs font-bold text-[#555f6f] uppercase tracking-wider block mb-1.5">
+                  Size / Option
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {product.sizes.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setSelectedSize(s)}
+                      className={`py-1 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        selectedSize === s
+                          ? 'bg-[#0058be] text-white'
+                          : 'bg-[#f0f4fc] text-[#1a1c1c] hover:bg-[#e2eaf8]'
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Quantity Selector */}
             <div>
@@ -741,7 +811,7 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
                 <button
                   type="button"
                   onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                  className="w-8 h-8 rounded-lg bg-white hover:bg-gray-100 flex items-center justify-center font-bold text-sm text-[#1a1c1c] shadow-xs"
+                  className="w-8 h-8 rounded-lg bg-white hover:bg-gray-100 flex items-center justify-center font-bold text-sm text-[#1a1c1c] shadow-xs cursor-pointer"
                 >
                   -
                 </button>
@@ -749,24 +819,24 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
                 <button
                   type="button"
                   onClick={() => setQuantity((q) => q + 1)}
-                  className="w-8 h-8 rounded-lg bg-white hover:bg-gray-100 flex items-center justify-center font-bold text-sm text-[#1a1c1c] shadow-xs"
+                  className="w-8 h-8 rounded-lg bg-white hover:bg-gray-100 flex items-center justify-center font-bold text-sm text-[#1a1c1c] shadow-xs cursor-pointer"
                 >
                   +
                 </button>
               </div>
             </div>
 
-            {/* Customization Details Summary */}
+            {/* Customization Details Summary (Dynamic per view) */}
             <div className="p-3 rounded-xl bg-gray-50 border border-gray-200 text-xs space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[#727785]">Front Elements:</span>
-                <span className="font-semibold text-[#1a1c1c]">{frontElements.length} layers</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[#727785]">Back Elements:</span>
-                <span className="font-semibold text-[#1a1c1c]">{backElements.length} layers</span>
-              </div>
-              <div className="flex items-center justify-between">
+              {views.map((v) => (
+                <div key={v.id} className="flex items-center justify-between">
+                  <span className="text-[#727785]">{v.name}:</span>
+                  <span className="font-semibold text-[#1a1c1c]">
+                    {(viewsElements[v.id] || []).length} layers
+                  </span>
+                </div>
+              ))}
+              <div className="flex items-center justify-between pt-1 border-t border-gray-200">
                 <span className="text-[#727785]">Production Turnaround:</span>
                 <span className="font-semibold text-emerald-700">2-3 Business Days</span>
               </div>
@@ -803,8 +873,11 @@ export const ProductDesignerPage: React.FC<ProductDesignerPageProps> = ({ onClos
         product={product}
         selectedColor={selectedColor}
         selectedSize={selectedSize}
-        previewFrontUrl={previewFrontUrl}
-        previewBackUrl={previewBackUrl}
+        views={views}
+        previewsByView={viewsPreviews}
+        activeViewId={activeViewId}
+        previewFrontUrl={viewsPreviews['front']}
+        previewBackUrl={viewsPreviews['back']}
         onAddToCart={handleAddToCart}
         totalPrice={unitPrice}
       />
