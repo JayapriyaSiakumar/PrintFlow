@@ -3,7 +3,9 @@ import { useApp } from '../context/AppContext';
 import { Sparkles, Shield, Truck, Heart } from 'lucide-react';
 
 export const Footer: React.FC = () => {
-  const { setActiveView, setCategory, setIsWishlistOpen } = useApp();
+  const { setActiveView, setCategory, setIsWishlistOpen, categories } = useApp();
+
+  const activeCategories = (categories || []).filter((c) => c.status !== false);
 
   return (
     <footer className="w-full bg-[#eeeeee] border-t border-[#e2e2e2] mt-20 select-none">
@@ -37,50 +39,45 @@ export const Footer: React.FC = () => {
           <div className="space-y-3">
             <h4 className="font-['Montserrat'] font-bold text-sm text-[#1a1c1c]">Products</h4>
             <ul className="space-y-2 text-xs text-[#555f6f]">
-              <li>
-                <button
-                  onClick={() => {
-                    setCategory('Apparel');
-                    setActiveView('products');
-                  }}
-                  className="hover:text-[#0058be] transition-colors cursor-pointer"
-                >
-                  Apparel Blanks
-                </button>
-              </li>
-              <li>
-                <button
-                  onClick={() => {
-                    setCategory('Home Decor');
-                    setActiveView('products');
-                  }}
-                  className="hover:text-[#0058be] transition-colors cursor-pointer"
-                >
-                  Home Decor
-                </button>
-              </li>
-              <li>
-                <button
-                  onClick={() => {
-                    setCategory('Accessories');
-                    setActiveView('products');
-                  }}
-                  className="hover:text-[#0058be] transition-colors cursor-pointer"
-                >
-                  Bags & Accessories
-                </button>
-              </li>
-              <li>
-                <button
-                  onClick={() => {
-                    setCategory('Stationery');
-                    setActiveView('products');
-                  }}
-                  className="hover:text-[#0058be] transition-colors cursor-pointer"
-                >
-                  Stationery & Prints
-                </button>
-              </li>
+              {activeCategories.length > 0 ? (
+                activeCategories.slice(0, 6).map((cat) => (
+                  <li key={cat.id || cat.slug}>
+                    <button
+                      onClick={() => {
+                        setCategory(cat.name);
+                        setActiveView('products');
+                      }}
+                      className="hover:text-[#0058be] transition-colors cursor-pointer text-left"
+                    >
+                      {cat.name}
+                    </button>
+                  </li>
+                ))
+              ) : (
+                <>
+                  <li>
+                    <button
+                      onClick={() => {
+                        setCategory('All');
+                        setActiveView('products');
+                      }}
+                      className="hover:text-[#0058be] transition-colors cursor-pointer"
+                    >
+                      All Products
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      onClick={() => {
+                        setActiveView('customizer');
+                      }}
+                      className="hover:text-[#0058be] transition-colors cursor-pointer"
+                    >
+                      Design Studio
+                    </button>
+                  </li>
+                </>
+              )}
             </ul>
           </div>
 

@@ -105,7 +105,7 @@ export const AdminDashboard: React.FC = () => {
     customizationConfig?: GenericCustomizationConfig;
   }>({
     name: '',
-    category: 'Apparel',
+    category: '',
     price: 29.99,
     stock: 50,
     spec: 'Standard Fit',
@@ -391,7 +391,7 @@ export const AdminDashboard: React.FC = () => {
 
   const openNewProductModal = () => {
     setEditingProduct(null);
-    const defaultCat = categories.length > 0 ? categories[0].name : 'Apparel';
+    const defaultCat = categories.length > 0 ? categories[0].name : '';
 
     setProductForm({
       name: '',
@@ -1447,12 +1447,9 @@ export const AdminDashboard: React.FC = () => {
                       </option>
                     ))
                   ) : (
-                    <>
-                      <option value="Apparel">Apparel</option>
-                      <option value="Home Decor">Home Decor</option>
-                      <option value="Accessories">Accessories</option>
-                      <option value="Stationery">Stationery</option>
-                    </>
+                    <option value="" disabled>
+                      No categories found — please create a category first
+                    </option>
                   )}
                 </select>
               </div>

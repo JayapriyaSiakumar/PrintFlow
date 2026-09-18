@@ -87,9 +87,9 @@ export const UnitTestsRunnerModal: React.FC = () => {
           updated[i].details = 'Health status OK. JWT secret signed and verified via jsonwebtoken.';
         } else if (updated[i].id === 't2') {
           // Test Products API
-          const fetched = await api.getProducts({ category: 'Apparel' });
-          if (!fetched || !Array.isArray(fetched.products) || fetched.products.length === 0) throw new Error('Empty product list');
-          updated[i].details = `Successfully retrieved ${fetched.products.length} category-filtered items from REST API.`;
+          const fetched = await api.getProducts();
+          if (!fetched || !Array.isArray(fetched.products)) throw new Error('Invalid products response');
+          updated[i].details = `Successfully queried products endpoint (${fetched.products.length} items in catalog).`;
         } else if (updated[i].id === 't3') {
           // Order State Machine
           const states = ['pending', 'processing', 'printing', 'quality_check', 'shipped', 'delivered'];

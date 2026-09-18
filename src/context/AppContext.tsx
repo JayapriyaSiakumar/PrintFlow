@@ -130,7 +130,7 @@ interface AppContextType {
 }
 
 const defaultFilters: FilterState = {
-  category: 'Apparel',
+  category: 'All',
   sizes: [],
   colors: [],
   minPrice: '',

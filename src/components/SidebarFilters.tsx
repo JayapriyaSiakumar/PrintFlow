@@ -4,12 +4,6 @@ import { Size, CategoryItem } from '../types';
 import { AVAILABLE_COLORS } from '../data/initialData';
 import { Check, RotateCcw, Layers } from 'lucide-react';
 
-const DEFAULT_CATEGORIES: { name: string; slug: string }[] = [
-  { name: 'Apparel', slug: 'apparel' },
-  { name: 'Home Decor', slug: 'home-decor' },
-  { name: 'Accessories', slug: 'accessories' },
-  { name: 'Stationery', slug: 'stationery' },
-];
 const SIZES: Size[] = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 
 export const SidebarFilters: React.FC = () => {
@@ -42,12 +36,9 @@ export const SidebarFilters: React.FC = () => {
     filters.sizes.length > 0 ||
     filters.colors.length > 0 ||
     filters.minPrice !== '' ||
-    filters.maxPrice !== '' ||
-    filters.searchQuery !== '';
+    filters.maxPrice !== '';
 
-  const activeCategories = categories && categories.length > 0
-    ? categories.filter(c => c.status !== false)
-    : DEFAULT_CATEGORIES.map(c => ({ id: c.slug, name: c.name, slug: c.slug, status: true } as CategoryItem));
+  const activeCategories = (categories || []).filter((c) => c.status !== false);
 
   return (
     <aside className="w-full lg:w-64 flex-shrink-0 flex flex-col gap-8 select-none">
@@ -133,6 +124,12 @@ export const SidebarFilters: React.FC = () => {
               </div>
             );
           })}
+
+          {activeCategories.length === 0 && (
+            <p className="text-[11px] text-[#727785] px-1.5 py-1 italic">
+              No categories created yet
+            </p>
+          )}
         </div>
       </div>
 

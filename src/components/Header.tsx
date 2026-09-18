@@ -20,14 +20,6 @@ import {
   Shield
 } from 'lucide-react';
 
-const CATEGORIES: { label: string; value: Category | 'All' }[] = [
-  { label: 'All Categories', value: 'All' },
-  { label: 'Apparel', value: 'Apparel' },
-  { label: 'Home Decor', value: 'Home Decor' },
-  { label: 'Accessories', value: 'Accessories' },
-  { label: 'Stationery', value: 'Stationery' },
-];
-
 export const Header: React.FC = () => {
   const {
     activeView,
@@ -54,14 +46,9 @@ export const Header: React.FC = () => {
 
   const categoryOptions = [
     { label: 'All Categories', value: 'All' },
-    ...(categories && categories.length > 0
-      ? categories.filter((c) => c.status !== false).map((c) => ({ label: c.name, value: c.name }))
-      : [
-          { label: 'Apparel', value: 'Apparel' },
-          { label: 'Home Decor', value: 'Home Decor' },
-          { label: 'Accessories', value: 'Accessories' },
-          { label: 'Stationery', value: 'Stationery' },
-        ]),
+    ...(categories || [])
+      .filter((c) => c.status !== false)
+      .map((c) => ({ label: c.name, value: c.name })),
   ];
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -94,11 +81,7 @@ export const Header: React.FC = () => {
   };
 
   const handleCategorySelect = (catValue: Category | 'All') => {
-    if (catValue === 'All') {
-      setCategory('Apparel'); // or default
-    } else {
-      setCategory(catValue);
-    }
+    setCategory(catValue);
     setCategoryDropdownOpen(false);
     if (activeView !== 'products') {
       setActiveView('products');
@@ -490,21 +473,23 @@ export const Header: React.FC = () => {
           </div>
 
           {/* Mobile Category Chips */}
-          <div className="flex items-center gap-2 overflow-x-auto pt-2 pb-1 no-scrollbar">
-            {CATEGORIES.map((cat) => (
-              <button
-                key={cat.label}
-                onClick={() => handleCategorySelect(cat.value)}
-                className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
-                  filters.category === cat.value
-                    ? 'bg-[#0058be] text-white'
-                    : 'bg-[#eeeeee] text-[#424754] hover:bg-[#e2e2e2]'
-                }`}
-              >
-                {cat.label}
-              </button>
-            ))}
-          </div>
+          {categoryOptions.length > 1 && (
+            <div className="flex items-center gap-2 overflow-x-auto pt-2 pb-1 no-scrollbar">
+              {categoryOptions.map((cat) => (
+                <button
+                  key={cat.label}
+                  onClick={() => handleCategorySelect(cat.value)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+                    filters.category === cat.value || (cat.value === 'All' && (!filters.category || filters.category === 'All'))
+                      ? 'bg-[#0058be] text-white'
+                      : 'bg-[#eeeeee] text-[#424754] hover:bg-[#e2e2e2]'
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
